@@ -79,7 +79,6 @@ export const Contracts: React.FC<ContractsProps> = ({ user }) => {
   // AI Recognition State
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [contractTextInput, setContractTextInput] = useState('');
-  const [aiInputMode, setAiInputMode] = useState<'image' | 'text'>('image');
   const [usedModelTag, setUsedModelTag] = useState<string | null>(null);
   const [isRecognizing, setIsRecognizing] = useState(false);
   const [recognitionMsg, setRecognitionMsg] = useState<string | null>(null);
@@ -203,7 +202,7 @@ export const Contracts: React.FC<ContractsProps> = ({ user }) => {
   };
 
   const triggerAiRecognition = async (overrideMode?: 'image' | 'text') => {
-    const mode = overrideMode || aiInputMode;
+    const mode = overrideMode || (uploadedImages.length > 0 ? 'image' : 'text');
     if (mode === 'image' && uploadedImages.length === 0) {
       setModalError('请先拍摄或上传合同图片');
       return;
@@ -590,7 +589,7 @@ export const Contracts: React.FC<ContractsProps> = ({ user }) => {
                 {!editingContract && (
                   <span className="text-xs bg-indigo-50 text-indigo-700 font-medium px-2 py-0.5 rounded-full flex items-center gap-1">
                     <span>🧠</span>
-                    <span>支持图片与文本 AI 识别</span>
+                    <span>AI 识别填单</span>
                   </span>
                 )}
               </div>
@@ -610,7 +609,10 @@ export const Contracts: React.FC<ContractsProps> = ({ user }) => {
               capture="environment"
               multiple
               className="hidden"
-              onChange={(e) => e.target.files && handleFilesSelected(e.target.files)}
+              onChange={(e) => {
+                if (e.target.files) handleFilesSelected(e.target.files);
+                e.target.value = '';
+              }}
             />
             <input
               type="file"
@@ -618,266 +620,213 @@ export const Contracts: React.FC<ContractsProps> = ({ user }) => {
               accept="image/*"
               multiple
               className="hidden"
-              onChange={(e) => e.target.files && handleFilesSelected(e.target.files)}
+              onChange={(e) => {
+                if (e.target.files) handleFilesSelected(e.target.files);
+                e.target.value = '';
+              }}
             />
 
             {/* Scrollable form body */}
             <div className="overflow-y-auto pr-1 space-y-4">
               {/* Expand AI Assistant Bar when collapsed */}
-              {!showAiUploadSection && !editingContract && (
+              {!showAiUploadSection && (
                 <button
                   type="button"
                   onClick={() => setShowAiUploadSection(true)}
-                  className="w-full py-2.5 px-3 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 hover:bg-indigo-50 text-indigo-700 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  className="w-full py-2 px-3 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 hover:bg-indigo-50 text-indigo-700 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <span>🧠</span>
-                  <span>展开 AI 智能识别助手 (支持图片 / 文本秒级填表)</span>
+                  <span>展开 AI 智能识别 (文本 / 拍照 / 相册填表)</span>
                 </button>
               )}
 
-              {/* AI Image / Text Recognition Section */}
+              {/* AI Recognition Section (Flat layout: 文本 -> 拍照 -> 相册) */}
               {showAiUploadSection && (
                 <div
                   onDragOver={(e) => {
                     e.preventDefault();
-                    if (aiInputMode === 'image') setIsDragging(true);
+                    setIsDragging(true);
                   }}
                   onDragLeave={() => setIsDragging(false)}
                   onDrop={(e) => {
                     e.preventDefault();
                     setIsDragging(false);
-                    if (e.dataTransfer.files) {
-                      setAiInputMode('image');
+                    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
                       handleFilesSelected(e.dataTransfer.files);
                     }
                   }}
-                  className={`rounded-xl border-2 transition-colors p-4 ${
+                  className={`rounded-xl border transition-colors p-3.5 space-y-3 ${
                     isDragging
-                      ? 'border-indigo-500 bg-indigo-50/60'
-                      : 'border-indigo-200/90 bg-linear-to-b from-indigo-50/30 to-white'
+                      ? 'border-indigo-500 bg-indigo-50/70'
+                      : 'border-indigo-200/80 bg-indigo-50/25'
                   }`}
                 >
-                  {/* Section header & Mode Tabs */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  {/* Header */}
+                  <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
                       <span>🧠</span>
-                      <span>AI 智能识别录入</span>
+                      <span>AI 智能识别填单</span>
                     </span>
-
-                    <div className="flex items-center gap-2">
-                      {/* Sub-tabs: Images vs Text */}
-                      <div className="flex p-0.5 bg-gray-200/70 rounded-lg text-xs font-medium">
-                        <button
-                          type="button"
-                          onClick={() => setAiInputMode('image')}
-                          className={`px-2.5 py-1 rounded-md flex items-center gap-1 transition-all cursor-pointer ${
-                            aiInputMode === 'image'
-                              ? 'bg-white text-indigo-700 shadow-2xs font-semibold'
-                              : 'text-gray-600 hover:text-gray-900'
-                          }`}
-                        >
-                          <span>📷</span>
-                          <span>图片/拍照</span>
-                          {uploadedImages.length > 0 && (
-                            <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.2 rounded-full font-bold">
-                              {uploadedImages.length}
-                            </span>
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAiInputMode('text')}
-                          className={`px-2.5 py-1 rounded-md flex items-center gap-1 transition-all cursor-pointer ${
-                            aiInputMode === 'text'
-                              ? 'bg-white text-indigo-700 shadow-2xs font-semibold'
-                              : 'text-gray-600 hover:text-gray-900'
-                          }`}
-                        >
-                          <span>📝</span>
-                          <span>输入文本</span>
-                          {contractTextInput.trim().length > 0 && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-600" />
-                          )}
-                        </button>
-                      </div>
-
-                      {/* Collapse Button */}
-                      <button
-                        type="button"
-                        onClick={() => setShowAiUploadSection(false)}
-                        className="text-gray-400 hover:text-gray-600 text-xs px-1.5 py-1 rounded hover:bg-gray-100 transition-colors cursor-pointer"
-                        title="收起 AI 识别"
-                      >
-                        收起 ▲
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAiUploadSection(false)}
+                      className="text-gray-400 hover:text-gray-600 text-xs px-1.5 py-0.5 rounded hover:bg-gray-100 transition-colors cursor-pointer"
+                      title="收起 AI 识别"
+                    >
+                      收起 ▲
+                    </button>
                   </div>
 
-                  {/* Mode 1: Image Upload / Capture */}
-                  {aiInputMode === 'image' && (
-                    <div>
-                      {uploadedImages.length === 0 ? (
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => cameraInputRef.current?.click()}
-                              className="inline-flex items-center px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors space-x-1.5 cursor-pointer"
-                            >
-                              <span>📷</span>
-                              <span>手机拍照上传</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => fileInputRef.current?.click()}
-                              className="inline-flex items-center px-3.5 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-medium transition-colors space-x-1.5 cursor-pointer"
-                            >
-                              <span>🖼️</span>
-                              <span>从相册/本地选择 (可多选)</span>
-                            </button>
-                          </div>
-                          <p className="text-[11px] text-gray-500 leading-relaxed">
-                            💡 提示：支持多页合同。您可以连续拍照（如第1页封面、第2页条款细则、签署盖章页），添加完毕后点击识别，AI 将跨页综合提取信息。
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          <div className="flex flex-wrap items-center gap-2 pt-1">
-                            {uploadedImages.map((img, idx) => (
-                              <div key={idx} className="relative group w-20 h-20 rounded-lg overflow-hidden border-2 border-indigo-200 bg-gray-100 shadow-2xs">
-                                <img src={img} alt={`合同第${idx + 1}页`} className="w-full h-full object-cover" />
-                                <button
-                                  type="button"
-                                  onClick={() => removeUploadedImage(idx)}
-                                  className="absolute top-1 right-1 bg-black/70 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs transition-colors cursor-pointer"
-                                  title="删除此页"
-                                >
-                                  &times;
-                                </button>
-                                <span className="absolute bottom-0 left-0 right-0 bg-black/60 text-[10px] text-white text-center py-0.5 font-medium">
-                                  第 {idx + 1} 页
-                                </span>
-                              </div>
-                            ))}
-
-                            {uploadedImages.length < 5 && (
-                              <div className="flex flex-col gap-1.5 justify-center">
-                                <button
-                                  type="button"
-                                  onClick={() => cameraInputRef.current?.click()}
-                                  className="h-9 px-2.5 rounded-lg border border-dashed border-indigo-300 hover:border-indigo-500 bg-white hover:bg-indigo-50 text-indigo-700 text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                                >
-                                  <span>📷</span>
-                                  <span>拍下一页</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => fileInputRef.current?.click()}
-                                  className="h-9 px-2.5 rounded-lg border border-dashed border-gray-300 hover:border-gray-400 bg-white hover:bg-gray-50 text-gray-600 text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                                >
-                                  <span>+</span>
-                                  <span>加选图片</span>
-                                </button>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Primary Trigger Button for Image Recognition (No Model Selector!) */}
-                          <div className="pt-1">
-                            <button
-                              type="button"
-                              onClick={() => triggerAiRecognition('image')}
-                              disabled={isRecognizing}
-                              className="w-full py-2.5 px-4 bg-linear-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-medium rounded-xl text-xs sm:text-sm shadow-sm transition-all flex items-center justify-center space-x-2 disabled:opacity-60 cursor-pointer"
-                            >
-                              {isRecognizing ? (
-                                <>
-                                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                  <span className="font-medium animate-pulse">
-                                    AI 正在综合审阅 {uploadedImages.length} 页合同内容并提取信息...
-                                  </span>
-                                </>
-                              ) : (
-                                <>
-                                  <span>✨</span>
-                                  <span className="font-semibold">
-                                    开始 AI 图片识别 (共 {uploadedImages.length} 页合同图片)
-                                  </span>
-                                </>
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Mode 2: Contract Text Input Recognition */}
-                  {aiInputMode === 'text' && (
-                    <div className="space-y-2.5">
-                      <div className="relative">
-                        <textarea
-                          rows={4}
-                          value={contractTextInput}
-                          onChange={(e) => setContractTextInput(e.target.value)}
-                          placeholder="在此直接粘贴合同正文条款、主要内容或通知摘要（例如：&#10;甲方：北京某某科技有限公司&#10;合同名称：2026年度技术咨询服务协议&#10;合同期限：自2026年3月1日至2027年2月28日&#10;金额：88,000元整）..."
-                          className="w-full p-3 text-xs bg-white border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-hidden placeholder-gray-400 font-sans leading-relaxed resize-y"
-                        />
+                  {/* 1. 文本 */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-gray-700 flex items-center gap-1">
+                        <span>📝</span>
+                        <span>文本</span>
+                      </span>
+                      <div className="flex items-center gap-2 text-[11px]">
                         {contractTextInput && (
                           <button
                             type="button"
                             onClick={() => setContractTextInput('')}
-                            className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 text-xs bg-gray-100 hover:bg-gray-200 px-1.5 py-0.5 rounded transition-colors cursor-pointer"
-                            title="清空文本"
+                            className="text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
                           >
                             清空
                           </button>
                         )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setContractTextInput(
+                              '合同名称：2026年度企业技术咨询与运维保障协议\n甲方名称：北京智联科创技术有限公司\n合同期限：2026年3月1日至2027年2月28日\n合同金额：158,000元\n关键条款：签订后付30%，到期满1年结清尾款。需提前30天沟通续签。'
+                            );
+                          }}
+                          className="text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
+                        >
+                          示例文本
+                        </button>
                       </div>
+                    </div>
 
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setContractTextInput(
-                                '合同名称：2026年度企业技术咨询与运维保障协议\n甲方名称：北京智联科创技术有限公司\n合同期限：2026年3月1日至2027年2月28日\n合同金额：人民币 158,000 元整\n关键条款：签订后付30%，初验通过付50%，到期满1年结清尾款。需提前30天沟通续签。'
-                              );
-                            }}
-                            className="px-2 py-1 bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 rounded text-[11px] transition-colors cursor-pointer"
-                          >
-                            填入示例文本
-                          </button>
-                          <span className="text-[11px] text-gray-400">
-                            {contractTextInput.length > 0 ? `已输入 ${contractTextInput.length} 字` : '支持长文本直接粘贴'}
-                          </span>
-                        </div>
+                    <div className="relative">
+                      <textarea
+                        rows={2}
+                        value={contractTextInput}
+                        onChange={(e) => setContractTextInput(e.target.value)}
+                        placeholder="粘贴或输入合同正文、关键条款摘要..."
+                        className="w-full p-2.5 text-xs bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-hidden placeholder-gray-400 leading-relaxed resize-y"
+                      />
+                    </div>
 
+                    {contractTextInput.trim() && (
+                      <div className="flex justify-end">
                         <button
                           type="button"
                           onClick={() => triggerAiRecognition('text')}
-                          disabled={isRecognizing || !contractTextInput.trim()}
-                          className="py-2 px-4 bg-linear-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-medium rounded-lg text-xs shadow-xs transition-all flex items-center space-x-1.5 disabled:opacity-50 cursor-pointer"
+                          disabled={isRecognizing}
+                          className="py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium shadow-2xs transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                         >
                           {isRecognizing ? (
                             <>
-                              <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                              <span>AI 正在提取合同信息...</span>
+                              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              <span>识别中...</span>
                             </>
                           ) : (
                             <>
                               <span>✨</span>
-                              <span>开始 AI 文本识别</span>
+                              <span>识别文本</span>
                             </>
                           )}
                         </button>
                       </div>
+                    )}
+                  </div>
+
+                  {/* 2. 拍照 与 3. 相册 */}
+                  <div className="space-y-2 pt-1 border-t border-indigo-100/70">
+                    <div className="grid grid-cols-2 gap-2">
+                      {/* 2. 拍照 */}
+                      <button
+                        type="button"
+                        onClick={() => cameraInputRef.current?.click()}
+                        className="py-2.5 px-3 bg-white hover:bg-indigo-50/60 border border-gray-200 hover:border-indigo-300 rounded-lg text-xs font-medium text-gray-700 flex items-center justify-center gap-1.5 shadow-2xs transition-colors cursor-pointer active:scale-98"
+                      >
+                        <span className="text-sm">📷</span>
+                        <span>拍照</span>
+                      </button>
+
+                      {/* 3. 相册 */}
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="py-2.5 px-3 bg-white hover:bg-indigo-50/60 border border-gray-200 hover:border-indigo-300 rounded-lg text-xs font-medium text-gray-700 flex items-center justify-center gap-1.5 shadow-2xs transition-colors cursor-pointer active:scale-98"
+                      >
+                        <span className="text-sm">🖼️</span>
+                        <span>相册</span>
+                      </button>
                     </div>
-                  )}
+
+                    {/* 图片预览与识别（有已上传图片时显示） */}
+                    {uploadedImages.length > 0 && (
+                      <div className="space-y-2 pt-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {uploadedImages.map((img, idx) => (
+                            <div
+                              key={idx}
+                              className="relative group w-16 h-16 rounded-lg overflow-hidden border border-indigo-200 bg-gray-100 shadow-2xs"
+                            >
+                              <img src={img} alt={`合同第${idx + 1}页`} className="w-full h-full object-cover" />
+                              <button
+                                type="button"
+                                onClick={() => removeUploadedImage(idx)}
+                                className="absolute top-0.5 right-0.5 bg-black/70 hover:bg-red-600 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] transition-colors cursor-pointer"
+                                title="删除此页"
+                              >
+                                &times;
+                              </button>
+                              <span className="absolute bottom-0 left-0 right-0 bg-black/60 text-[9px] text-white text-center py-0.2 font-medium">
+                                第 {idx + 1} 页
+                              </span>
+                            </div>
+                          ))}
+
+                          {uploadedImages.length < 5 && (
+                            <button
+                              type="button"
+                              onClick={() => fileInputRef.current?.click()}
+                              className="w-16 h-16 rounded-lg border border-dashed border-gray-300 hover:border-indigo-400 bg-white hover:bg-indigo-50/40 text-gray-400 hover:text-indigo-600 flex flex-col items-center justify-center gap-0.5 text-[10px] transition-colors cursor-pointer"
+                            >
+                              <span className="text-sm">+</span>
+                              <span>加选</span>
+                            </button>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => triggerAiRecognition('image')}
+                          disabled={isRecognizing}
+                          className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-xs shadow-2xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-60 cursor-pointer"
+                        >
+                          {isRecognizing ? (
+                            <>
+                              <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              <span>正在识别 {uploadedImages.length} 页图片...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>✨</span>
+                              <span>识别已选图片 (共 {uploadedImages.length} 页)</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Recognition success prompt */}
                   {!isRecognizing && recognitionMsg && (
-                    <div className="mt-3 p-2.5 bg-green-50 text-green-800 text-xs rounded-lg border border-green-200">
+                    <div className="p-2.5 bg-green-50 text-green-800 text-xs rounded-lg border border-green-200">
                       <div className="flex items-center space-x-1.5 font-semibold">
                         <span>✨</span>
                         <span>AI 识别成功并自动填入表单</span>

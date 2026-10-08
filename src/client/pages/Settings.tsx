@@ -64,9 +64,13 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
         if (data.ai_model) {
           if (data.ai_model.startsWith('@cf/')) {
             setCfModel(data.ai_model);
+            setAiTab('cf');
           } else {
             setCustomModel(data.ai_model);
+            setAiTab('custom');
           }
+        } else if (data.ai_api_key_configured) {
+          setAiTab('custom');
         }
         if (data.ai_api_key_configured) {
           setAiKeyConfigured(true);
@@ -199,7 +203,7 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 space-y-8">
+    <div className="max-w-4xl mx-auto px-3 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 tracking-tight">应用与提醒设置</h1>
         <p className="mt-1 text-sm text-gray-500">
@@ -223,7 +227,7 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
           </div>
         )}
 
-        <div className="p-6 space-y-6">
+        <div className="p-4 sm:p-6 space-y-5 sm:space-y-6">
           {/* Reminder Days Field */}
           <div>
             <label className="block text-sm font-semibold text-gray-900">
@@ -342,176 +346,155 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
 
           {/* AI Recognition Engine Settings */}
           <div className="pt-4 border-t border-gray-100">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-3">
-              <div>
-                <label className="block text-sm font-semibold text-gray-900 flex items-center gap-1.5">
-                  <span className="text-base">🧠</span>
-                  <span>AI 识别引擎配置 (可选)</span>
-                </label>
-                <p className="mt-0.5 text-xs text-gray-500">
-                  用于通过图片或粘贴文本自动识别提取合同信息。系统原生支持 Cloudflare Workers AI，亦可配置外部 API。
-                </p>
-              </div>
+            <div className="mb-2.5">
+              <label className="block text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                <span className="text-base">🧠</span>
+                <span>AI 识别引擎配置 (可选)</span>
+              </label>
+              <p className="mt-0.5 text-xs text-gray-500">
+                用于合同图片或文本识别提取。支持 Workers AI 原生算力或自定义 API。
+              </p>
             </div>
 
-            {/* Tab switchers: CF 原生 vs 自定义第三方 API */}
-            <div className="max-w-xl">
-              <div className="flex p-1 bg-gray-100 rounded-xl space-x-1 text-xs font-medium mb-4">
-                <button
-                  type="button"
-                  onClick={() => setAiTab('cf')}
-                  className={`flex-1 py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                    aiTab === 'cf'
-                      ? 'bg-white text-indigo-700 shadow-xs font-semibold'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  <span>⚡</span>
-                  <span>Cloudflare 原生引擎</span>
-                  <span className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-normal">
-                    推荐 / 默认
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAiTab('custom')}
-                  className={`flex-1 py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                    aiTab === 'custom'
-                      ? 'bg-white text-gray-900 shadow-xs font-semibold'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  <span>🔑</span>
-                  <span>自定义第三方 API</span>
-                  <span className="text-[10px] bg-gray-200/70 text-gray-600 px-1.5 py-0.5 rounded font-normal">
-                    兼容 OpenAI
-                  </span>
-                </button>
-              </div>
+            {/* Segmented Control: Workers AI vs 自定义 API */}
+            <div className="w-full max-w-sm grid grid-cols-2 p-1 bg-gray-100 rounded-lg text-xs font-medium mb-3">
+              <button
+                type="button"
+                onClick={() => setAiTab('cf')}
+                className={`py-1.5 px-3 rounded-md text-center transition-all cursor-pointer ${
+                  aiTab === 'cf'
+                    ? 'bg-white text-gray-900 shadow-xs font-semibold'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                Workers AI
+              </button>
+              <button
+                type="button"
+                onClick={() => setAiTab('custom')}
+                className={`py-1.5 px-3 rounded-md text-center transition-all cursor-pointer ${
+                  aiTab === 'custom'
+                    ? 'bg-white text-gray-900 shadow-xs font-semibold'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                自定义 API
+              </button>
+            </div>
 
-              {/* Tab 1: Cloudflare Native Settings */}
-              {aiTab === 'cf' && (
-                <div className="space-y-3.5 bg-indigo-50/30 border border-indigo-100/70 p-4 rounded-xl">
-                  <div className="flex items-start gap-2 text-xs text-indigo-900 bg-indigo-100/60 p-2.5 rounded-lg border border-indigo-200/50">
-                    <span className="text-sm">✨</span>
-                    <span className="leading-relaxed">
-                      <strong>开箱即用，免配置 Key：</strong>由 Cloudflare 全球边缘 Workers AI 原生算力直接驱动，具备极高性价比与低网络延迟。
-                    </span>
-                  </div>
+            {/* Tab 1: Workers AI Settings */}
+            {aiTab === 'cf' && (
+              <div className="space-y-2.5 max-w-lg">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    视觉模型
+                  </label>
+                  <select
+                    value={cfModel}
+                    onChange={(e) => setCfModel(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs sm:text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    {CF_AI_VISION_MODELS.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        #{m.costRank} {m.name} · {m.badge}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                      Cloudflare 原生视觉模型（按性价比从高到低排列）
-                    </label>
-                    <select
-                      value={cfModel}
-                      onChange={(e) => setCfModel(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-medium"
-                    >
-                      {CF_AI_VISION_MODELS.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          #{m.costRank} {m.name} [{m.badge}] - {m.pricingDesc}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Active CF Model Features Detail */}
-                  {(() => {
-                    const matched = CF_AI_VISION_MODELS.find((m) => m.id === cfModel) || CF_AI_VISION_MODELS[0];
-                    return (
-                      <div className="p-3 bg-white rounded-lg border border-indigo-100 text-xs space-y-1 shadow-2xs">
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-indigo-950 flex items-center gap-1">
-                            <span>🏷️ 模型特性：</span>
-                            <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-[11px] font-medium">{matched.badge}</span>
+                {/* Active CF Model Features Detail */}
+                {(() => {
+                  const matched = CF_AI_VISION_MODELS.find((m) => m.id === cfModel) || CF_AI_VISION_MODELS[0];
+                  return (
+                    <div className="p-2.5 sm:p-3 bg-gray-50 rounded-lg border border-gray-200 text-xs space-y-1">
+                      <div className="flex flex-wrap items-center justify-between gap-1">
+                        <span className="font-semibold text-gray-900 flex items-center gap-1.5">
+                          <span>🏷️ 特性：</span>
+                          <span className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-[11px] font-medium border border-blue-100">
+                            {matched.badge}
                           </span>
-                          <span className="text-gray-500 font-mono text-[11px]">{matched.pricingDesc}</span>
-                        </div>
-                        <p className="text-gray-600 leading-relaxed pt-0.5">{matched.features}</p>
+                        </span>
+                        <span className="text-gray-500 font-mono text-[11px]">{matched.pricingDesc}</span>
                       </div>
-                    );
-                  })()}
+                      <p className="text-gray-600 leading-relaxed text-[11px] sm:text-xs pt-0.5">{matched.features}</p>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Tab 2: Custom External API Settings */}
+            {aiTab === 'custom' && (
+              <div className="space-y-3 max-w-lg">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    API 基础地址 (Base URL)
+                  </label>
+                  <input
+                    type="text"
+                    value={aiBaseUrlInput}
+                    onChange={(e) => setAiBaseUrlInput(e.target.value)}
+                    placeholder="留空默认 https://api.openai.com/v1"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
                 </div>
-              )}
 
-              {/* Tab 2: Custom External API Settings */}
-              {aiTab === 'custom' && (
-                <div className="space-y-3.5 bg-gray-50/70 border border-gray-200 p-4 rounded-xl">
-                  <div className="text-xs text-gray-600 bg-white p-2.5 rounded-lg border border-gray-200/70">
-                    💡 <strong>自备服务配置：</strong>适用于使用您自备的 OpenAI、Gemini、通义千问或 DeepSeek 等兼容 OpenAI 格式的多模态 API 服务。
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      API 基础地址 (Base URL)
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-gray-700">
+                      API 密钥 (API Key)
                     </label>
-                    <input
-                      type="text"
-                      value={aiBaseUrlInput}
-                      onChange={(e) => setAiBaseUrlInput(e.target.value)}
-                      placeholder="留空则使用默认 (https://api.openai.com/v1)"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    />
+                    {aiKeyConfigured && (
+                      <button
+                        type="button"
+                        onClick={handleClearAiKey}
+                        className="text-xs text-red-600 hover:text-red-800 font-medium cursor-pointer"
+                      >
+                        清除当前密钥
+                      </button>
+                    )}
                   </div>
+                  <input
+                    type="password"
+                    value={aiApiKeyInput}
+                    onChange={(e) => setAiApiKeyInput(e.target.value)}
+                    placeholder={aiKeyConfigured ? `已配置 (${aiKeyMasked})，输入新密钥可覆盖` : 'sk-...'}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs bg-white"
+                  />
+                </div>
 
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs font-semibold text-gray-700">
-                        API 密钥 (API Key)
-                      </label>
-                      {aiKeyConfigured && (
-                        <button
-                          type="button"
-                          onClick={handleClearAiKey}
-                          className="text-xs text-red-600 hover:text-red-800 font-medium cursor-pointer"
-                        >
-                          清除当前密钥
-                        </button>
-                      )}
-                    </div>
-                    <input
-                      type="password"
-                      value={aiApiKeyInput}
-                      onChange={(e) => setAiApiKeyInput(e.target.value)}
-                      placeholder={aiKeyConfigured ? `已配置 (${aiKeyMasked})，输入新密钥可覆盖` : 'sk-...'}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs bg-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      自定义模型名称 (Model)
-                    </label>
-                    <input
-                      type="text"
-                      value={customModel}
-                      onChange={(e) => setCustomModel(e.target.value)}
-                      placeholder="例如：gpt-4o-mini、qwen-vl-plus、gemini-1.5-flash"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs bg-white"
-                    />
-                    <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-gray-500">
-                      <span>常用参考:</span>
-                      {['gpt-4o-mini', 'gpt-4o', 'qwen-vl-plus'].map((m) => (
-                        <button
-                          key={m}
-                          type="button"
-                          onClick={() => setCustomModel(m)}
-                          className="px-1.5 py-0.5 bg-gray-200/70 hover:bg-gray-300 text-gray-700 rounded transition-colors font-mono cursor-pointer"
-                        >
-                          {m}
-                        </button>
-                      ))}
-                    </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    自定义模型名称 (Model)
+                  </label>
+                  <input
+                    type="text"
+                    value={customModel}
+                    onChange={(e) => setCustomModel(e.target.value)}
+                    placeholder="例如：gpt-4o-mini、qwen-vl-plus、gemini-1.5-flash"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs bg-white"
+                  />
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5 text-[11px] text-gray-500">
+                    <span>常用参考:</span>
+                    {['gpt-4o-mini', 'gpt-4o', 'qwen-vl-plus'].map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setCustomModel(m)}
+                        className="px-1.5 py-0.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors font-mono cursor-pointer"
+                      >
+                        {m}
+                      </button>
+                    ))}
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Form Actions */}
-        <div className="px-6 py-4 bg-gray-50/50 flex justify-end">
+        <div className="px-4 sm:px-6 py-3.5 bg-gray-50/50 flex justify-end">
           <button
             type="submit"
             disabled={saveLoading}
@@ -533,7 +516,7 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
       </form>
 
       {/* Test Email Section */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-xs p-6 space-y-4">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-xs p-4 sm:p-6 space-y-4">
         <div>
           <h2 className="text-base font-semibold text-gray-900">发送测试邮件</h2>
           <p className="mt-1 text-sm text-gray-500">
@@ -585,7 +568,7 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
       </div>
 
       {/* Account Info */}
-      <div className="bg-gray-50 rounded-xl border border-gray-200 p-6 space-y-3">
+      <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 sm:p-6 space-y-3">
         <h3 className="text-sm font-semibold text-gray-700">账号信息</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs text-gray-600">
           <div>

@@ -184,8 +184,9 @@ export const Contracts: React.FC<ContractsProps> = ({ user }) => {
       const compressedList = await Promise.all(imageFiles.map((file) => compressImageFile(file)));
       const combined = [...uploadedImages, ...compressedList].slice(0, 5);
       setUploadedImages(combined);
-      // Auto trigger recognition on upload
-      triggerAiRecognition(combined);
+      setModalError(null);
+      setRecognitionMsg(null);
+      setIsMockRecognize(false);
     } catch (err: any) {
       setModalError('图片压缩处理失败，请重试');
     }
@@ -629,104 +630,127 @@ export const Contracts: React.FC<ContractsProps> = ({ user }) => {
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-semibold text-indigo-900 flex items-center gap-1.5">
                       <span>📸</span>
-                      <span>拍照或上传合同图片让 AI 智能识别</span>
+                      <span>拍照或上传合同图片 (支持多页合同)</span>
                     </span>
                     {uploadedImages.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => triggerAiRecognition()}
-                        disabled={isRecognizing}
-                        className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold disabled:opacity-50"
-                      >
-                        {isRecognizing ? '识别中...' : '重新识别 ↻'}
-                      </button>
+                      <span className="text-[11px] text-indigo-700 bg-indigo-100/70 px-2 py-0.5 rounded-full font-medium">
+                        已添加 {uploadedImages.length} / 5 页
+                      </span>
                     )}
                   </div>
 
-                  {/* Actions buttons */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => cameraInputRef.current?.click()}
-                      className="inline-flex items-center px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium shadow-2xs transition-colors space-x-1.5"
-                    >
-                      <span>📷</span>
-                      <span>拍照上传</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="inline-flex items-center px-3 py-1.5 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-medium transition-colors space-x-1.5"
-                    >
-                      <span>🖼️</span>
-                      <span>从相册/本地选择</span>
-                    </button>
-                    <span className="text-[11px] text-gray-400">
-                      支持拖拽或直接 Ctrl+V 粘贴截图，支持多页合同
-                    </span>
-                  </div>
-
-                  {/* Image thumbnails preview */}
-                  {uploadedImages.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2 pt-2 border-t border-indigo-100/60">
-                      {uploadedImages.map((img, idx) => (
-                        <div key={idx} className="relative group w-16 h-16 rounded-lg overflow-hidden border border-indigo-200 shadow-2xs">
-                          <img src={img} alt={`合同第${idx + 1}页`} className="w-full h-full object-cover" />
-                          <button
-                            type="button"
-                            onClick={() => removeUploadedImage(idx)}
-                            className="absolute top-0.5 right-0.5 bg-black/60 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] hover:bg-red-600 transition-colors"
-                            title="删除图片"
-                          >
-                            &times;
-                          </button>
-                          <span className="absolute bottom-0 left-0 right-0 bg-black/50 text-[9px] text-white text-center py-0.5">
-                            第{idx + 1}页
-                          </span>
-                        </div>
-                      ))}
-                      {uploadedImages.length < 5 && (
+                  {/* Actions buttons when no images uploaded yet */}
+                  {uploadedImages.length === 0 ? (
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => cameraInputRef.current?.click()}
+                          className="inline-flex items-center px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors space-x-1.5 cursor-pointer"
+                        >
+                          <span>📷</span>
+                          <span>手机拍照上传</span>
+                        </button>
                         <button
                           type="button"
                           onClick={() => fileInputRef.current?.click()}
-                          className="w-16 h-16 rounded-lg border border-dashed border-gray-300 hover:border-indigo-400 text-gray-400 hover:text-indigo-600 flex flex-col items-center justify-center text-xs transition-colors"
+                          className="inline-flex items-center px-3.5 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-medium transition-colors space-x-1.5 cursor-pointer"
                         >
-                          <span>+</span>
-                          <span className="text-[10px]">加一页</span>
+                          <span>🖼️</span>
+                          <span>从相册/本地选择 (可多选)</span>
                         </button>
-                      )}
+                      </div>
+                      <p className="text-[11px] text-gray-500 leading-relaxed">
+                        💡 提示：支持多页合同。您可以连续拍照（如第1页封面、第2页条款细则、签署盖章页），添加完毕后点击识别，AI 将跨页综合提取信息。
+                      </p>
                     </div>
-                  )}
+                  ) : (
+                    /* Multi-image thumbnail gallery & photo queue */
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        {uploadedImages.map((img, idx) => (
+                          <div key={idx} className="relative group w-20 h-20 rounded-lg overflow-hidden border-2 border-indigo-200 bg-gray-100 shadow-2xs">
+                            <img src={img} alt={`合同第${idx + 1}页`} className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => removeUploadedImage(idx)}
+                              className="absolute top-1 right-1 bg-black/70 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs transition-colors cursor-pointer"
+                              title="删除此页"
+                            >
+                              &times;
+                            </button>
+                            <span className="absolute bottom-0 left-0 right-0 bg-black/60 text-[10px] text-white text-center py-0.5 font-medium">
+                              第 {idx + 1} 页
+                            </span>
+                          </div>
+                        ))}
 
-                  {/* Model selector (Ordered by cost-performance) */}
-                  <div className="mt-3 pt-2.5 border-t border-indigo-100/60 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
-                    <div className="flex items-center space-x-1.5 text-xs text-indigo-900 font-medium shrink-0">
-                      <span>🤖</span>
-                      <span>Cloudflare AI 视觉模型 (按性价比排序):</span>
-                    </div>
-                    <select
-                      value={selectedModel}
-                      onChange={(e) => setSelectedModel(e.target.value)}
-                      className="text-xs bg-white border border-indigo-200 text-gray-800 rounded-lg px-2.5 py-1 focus:ring-1 focus:ring-indigo-500 focus:outline-hidden font-medium"
-                    >
-                      {CF_AI_VISION_MODELS.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          #{m.costRank} {m.name} [{m.badge}] - {m.pricingDesc}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="mt-1 text-[11px] text-indigo-600/80">
-                    💡 {CF_AI_VISION_MODELS.find((m) => m.id === selectedModel)?.features || '精选 Cloudflare Workers AI 官方视觉多模态大模型'}
-                  </div>
+                        {uploadedImages.length < 5 && (
+                          <div className="flex flex-col gap-1.5 justify-center">
+                            <button
+                              type="button"
+                              onClick={() => cameraInputRef.current?.click()}
+                              className="h-9 px-2.5 rounded-lg border border-dashed border-indigo-300 hover:border-indigo-500 bg-white hover:bg-indigo-50 text-indigo-700 text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <span>📷</span>
+                              <span>拍下一页</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => fileInputRef.current?.click()}
+                              className="h-9 px-2.5 rounded-lg border border-dashed border-gray-300 hover:border-gray-400 bg-white hover:bg-gray-50 text-gray-600 text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <span>+</span>
+                              <span>加选图片</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
 
-                  {/* Recognition loading / progress */}
-                  {isRecognizing && (
-                    <div className="mt-3 p-2.5 bg-indigo-50 text-indigo-700 text-xs rounded-lg flex items-center space-x-2 border border-indigo-100">
-                      <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin shrink-0" />
-                      <span className="font-medium animate-pulse">
-                        AI 正在深度解析合同图片，提取合同名称、甲方、起止日期与金额...
-                      </span>
+                      {/* Model selector (Ordered by cost-performance) */}
+                      <div className="pt-2 border-t border-indigo-100/60 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                        <div className="flex items-center space-x-1 text-xs text-indigo-900 font-medium shrink-0">
+                          <span>🤖</span>
+                          <span>AI 视觉模型 (按性价比排序):</span>
+                        </div>
+                        <select
+                          value={selectedModel}
+                          onChange={(e) => setSelectedModel(e.target.value)}
+                          className="text-xs bg-white border border-indigo-200 text-gray-800 rounded-lg px-2 py-1 focus:ring-1 focus:ring-indigo-500 focus:outline-hidden font-medium"
+                        >
+                          {CF_AI_VISION_MODELS.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              #{m.costRank} {m.name} [{m.badge}] - {m.pricingDesc}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Primary Trigger Button */}
+                      <div className="pt-1">
+                        <button
+                          type="button"
+                          onClick={() => triggerAiRecognition()}
+                          disabled={isRecognizing}
+                          className="w-full py-2.5 px-4 bg-linear-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-medium rounded-xl text-xs sm:text-sm shadow-sm transition-all flex items-center justify-center space-x-2 disabled:opacity-60 cursor-pointer"
+                        >
+                          {isRecognizing ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              <span className="font-medium animate-pulse">
+                                AI 正在综合审阅 {uploadedImages.length} 页合同内容并提取信息...
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span>✨</span>
+                              <span className="font-semibold">
+                                开始 AI 识别 (共 {uploadedImages.length} 页合同图片)
+                              </span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   )}
 
@@ -745,7 +769,7 @@ export const Contracts: React.FC<ContractsProps> = ({ user }) => {
                       <div className="mt-0.5 text-green-700 text-[11px]">{recognitionMsg}</div>
                       {isMockRecognize && (
                         <div className="mt-1 text-amber-700 text-[11px] bg-amber-50 p-1.5 rounded border border-amber-200/60">
-                          💡 提示：当前未配置 AI API Key，已自动为您载入示例演示数据。可在「提醒设置」中填入自定义 Key 开启真实全自动识别。
+                          💡 提示：当前处于本地离线演示环境，已自动载入示例数据。线上生产环境由 Cloudflare Workers AI 进行真实识别。
                         </div>
                       )}
                     </div>

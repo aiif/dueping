@@ -209,12 +209,61 @@ describe('10. 合同 AI 识别逻辑与数据规范化', () => {
       env: mockEnv as any,
       user: fakeUser,
       images: ['data:image/jpeg;base64,ZmFrZQ=='],
-      model: '@cf/moondream/moondream3-1.9b-a2b',
+      model: '@cf/moondream/moondream3.1-9B-A2B',
     });
 
-    expect(calledModel).toBe('@cf/moondream/moondream3-1.9b-a2b');
-    expect(res.model_used).toBe('@cf/moondream/moondream3-1.9b-a2b');
+    expect(calledModel).toBe('@cf/moondream/moondream3.1-9B-A2B');
+    expect(res.model_used).toBe('@cf/moondream/moondream3.1-9B-A2B');
     expect(res.name).toBe('测试特定模型合同');
+  });
+
+  it('支持上传多张合同图片并合并审阅', async () => {
+    let capturedOptions: any = null;
+    const mockEnv = {
+      AI: {
+        run: async (model: string, options: any) => {
+          capturedOptions = options;
+          return {
+            response: JSON.stringify({
+              name: '多页服务总合同',
+              client: '北京多元科技股份有限公司',
+              start_date: '2026-06-01',
+              end_date: '2028-05-31',
+              amount: 520000,
+              note: '共两页合同，包含第一页条款和第二页签署盖章',
+            }),
+          };
+        },
+      },
+    };
+
+    const fakeUser: User = {
+      id: 'u1',
+      email: 'test@example.com',
+      reminder_days: [30, 15, 7],
+      send_hour: 9,
+      timezone: 'Asia/Shanghai',
+      created_at: new Date().toISOString(),
+    };
+
+    const res = await recognizeContract({
+      env: mockEnv as any,
+      user: fakeUser,
+      images: [
+        'data:image/jpeg;base64,ZmFrZVBhZ2Ux',
+        'data:image/jpeg;base64,ZmFrZVBhZ2Uy',
+      ],
+      model: '@cf/meta/llama-3.2-11b-vision-instruct',
+    });
+
+    expect(res.name).toBe('多页服务总合同');
+    expect(res.amount).toBe(520000);
+    expect(res.is_mock).toBe(false);
+    expect(capturedOptions.messages).toBeDefined();
+    // 包含文字提示与2张图片的 image_url
+    const userContent = capturedOptions.messages[1].content;
+    const imageUrls = userContent.filter((c: any) => c.type === 'image_url');
+    expect(imageUrls.length).toBe(2);
   });
 
   it('设置校验支持保存自定义 AI 配置字段', () => {

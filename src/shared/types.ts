@@ -7,6 +7,9 @@ export interface User {
   send_hour: number;
   timezone: string;
   created_at: string;
+  ai_api_key?: string | null;
+  ai_base_url?: string | null;
+  ai_model?: string | null;
 }
 
 export interface UserRow {
@@ -16,6 +19,9 @@ export interface UserRow {
   send_hour: number;
   timezone: string;
   created_at: string;
+  ai_api_key?: string | null;
+  ai_base_url?: string | null;
+  ai_model?: string | null;
 }
 
 export interface Contract {
@@ -75,6 +81,9 @@ export interface UserSettings {
   reminder_days: number[];
   send_hour: number;
   timezone: string;
+  ai_api_key?: string | null;
+  ai_base_url?: string | null;
+  ai_model?: string | null;
 }
 
 export interface PendingReminderItem {
@@ -85,4 +94,21 @@ export interface PendingReminderItem {
 
 export interface SettingsResponse {
   settings: UserSettings;
+}
+
+export interface ContractRecognizeResult {
+  name?: string;
+  client?: string;
+  start_date?: string | null;
+  end_date?: string;
+  amount?: number | null;
+  note?: string | null;
+  confidence?: 'high' | 'medium' | 'low';
+  summary?: string;
+  is_mock?: boolean;
+}
+
+export interface ContractRecognizeRequest {
+  images: string[];
+  prompt?: string;
 }

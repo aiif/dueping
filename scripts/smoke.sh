@@ -153,6 +153,42 @@ if ! echo "${SETTINGS_RES}" | grep -q '"send_hour":0'; then
 fi
 echo "✓ Settings updated: reminder_days=[30,15,7], send_hour=0, timezone=Asia/Shanghai."
 
+# Step 4.5: User 1 Test AI Contract Recognition
+echo ""
+echo "▶ 4.5. Testing AI Contract Image Recognition (/api/contracts/recognize)..."
+RECOG_UNAUTH=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${BASE_URL}/api/contracts/recognize" \
+  -H "Content-Type: application/json" \
+  -H "Origin: ${BASE_URL}" \
+  -d '{"images":["data:image/jpeg;base64,ZmFrZQ=="]}')
+if [ "${RECOG_UNAUTH}" != "401" ]; then
+  echo "❌ Unauthenticated recognition should return 401, got: ${RECOG_UNAUTH}"
+  exit 1
+fi
+echo "✓ Unauthenticated recognition correctly rejected with HTTP 401."
+
+RECOG_BAD_REQ=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${BASE_URL}/api/contracts/recognize" \
+  -b "${USER1_COOKIE}" \
+  -H "Content-Type: application/json" \
+  -H "Origin: ${BASE_URL}" \
+  -d '{"images":[]}')
+if [ "${RECOG_BAD_REQ}" != "400" ]; then
+  echo "❌ Empty images recognition should return 400, got: ${RECOG_BAD_REQ}"
+  exit 1
+fi
+echo "✓ Empty images recognition correctly rejected with HTTP 400."
+
+RECOG_RES=$(curl -s -X POST "${BASE_URL}/api/contracts/recognize" \
+  -b "${USER1_COOKIE}" \
+  -H "Content-Type: application/json" \
+  -H "Origin: ${BASE_URL}" \
+  -d '{"images":["data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="]}')
+
+if ! echo "${RECOG_RES}" | grep -q '"success":true'; then
+  echo "❌ Failed to recognize contract image: ${RECOG_RES}"
+  exit 1
+fi
+echo "✓ AI Contract Image Recognition successfully returned structured contract data."
+
 # Step 5: User 1 Create Contract
 echo ""
 echo "▶ 5. Creating User 1 Contract..."

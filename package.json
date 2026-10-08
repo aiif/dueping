@@ -12,7 +12,7 @@
     "test": "vitest run --reporter=verbose",
     "deploy": "npm run build && wrangler deploy",
     "smoke": "bash scripts/smoke.sh",
-    "db:local": "wrangler d1 migrations apply dueping --local",
+    "db:local": "CI=true wrangler d1 migrations apply dueping --local",
     "db:remote": "wrangler d1 migrations apply dueping --remote",
     "start:local": "wrangler dev --test-scheduled --port 8787"
   },

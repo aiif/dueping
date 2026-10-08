@@ -15,6 +15,7 @@
   - **数据库**：Cloudflare D1 (纯 SQLite，无 KV)
   - **定时任务**：Cron Triggers (`0 * * * *`，整点调度)
   - **邮件发送**：Cloudflare Email Service Workers 绑定 (`EMAIL`)
+  - **智能识别**：支持手机拍照 / 图片上传通过多模态 AI 智能提取合同关键信息并自动回填
   - **前端**：React 19 + Vite 8 + Tailwind CSS v4 + wouter 路由 + 原生 fetch 轻量封装
   - **工程**：单仓库一体化构建（`@cloudflare/vite-plugin`）
 
@@ -99,8 +100,11 @@ npm run deploy
    - `reminder_days TEXT NOT NULL DEFAULT '[30,15,7]'`
    - `send_hour INTEGER NOT NULL DEFAULT 9`
    - `timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai'`
+   - `ai_api_key TEXT DEFAULT NULL`（迁移 0002：可选自定义大模型密钥）
+   - `ai_base_url TEXT DEFAULT NULL`（迁移 0002：可选自定义大模型 Base URL）
+   - `ai_model TEXT DEFAULT NULL`（迁移 0002：可选自定义视觉模型名称）
    - `created_at TEXT NOT NULL`
-   - *设计理由*：`reminder_days` 存为标准 JSON 整数数组；时区存为 IANA 时区标识符（如 `Asia/Shanghai`）。
+   - *设计理由*：`reminder_days` 存为标准 JSON 整数数组；时区存为 IANA 时区标识符（如 `Asia/Shanghai`）；AI 配置支持用户私有模型扩展，未配置时自动回退系统默认/演示模式。
 2. **`sessions`**：
    - `token_hash TEXT PRIMARY KEY`
    - `user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE`

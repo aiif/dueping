@@ -1,8 +1,40 @@
 import { Hono } from 'hono';
 import { User, Contract } from '../shared/types';
 import { validateContractInput } from '../shared/logic';
+import { recognizeContract } from './recognition';
+import { checkRateLimit } from './rateLimit';
 
 export const contractsApp = new Hono<{ Bindings: Env; Variables: { user: User } }>();
+
+/**
+ * Recognize contract details from uploaded images using AI
+ */
+contractsApp.post('/recognize', async (c) => {
+  const user = c.get('user');
+
+  // Rate limit: 30 recognition requests per hour per user
+  const limitCheck = await checkRateLimit(c.env.DB, `recognize:${user.id}`, 30, 3600);
+  if (!limitCheck.allowed) {
+    return c.json({ error: '合同识别过于频繁，每小时最多 30 次，请稍候重试' }, 429);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const images = Array.isArray(body?.images) ? body.images : [];
+  if (images.length === 0) {
+    return c.json({ error: '请上传至少一张合同图片' }, 400);
+  }
+
+  try {
+    const result = await recognizeContract({
+      env: c.env,
+      user,
+      images,
+    });
+    return c.json({ success: true, result });
+  } catch (err: any) {
+    return c.json({ error: err.message || '合同识别失败，请核对图片后重试' }, 500);
+  }
+});
 
 /**
  * List all contracts for the authenticated user, sorted by end_date ASC

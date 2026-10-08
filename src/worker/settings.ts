@@ -16,6 +16,10 @@ settingsApp.get('/', async (c) => {
     reminder_days: user.reminder_days,
     send_hour: user.send_hour,
     timezone: user.timezone,
+    ai_base_url: user.ai_base_url || '',
+    ai_model: user.ai_model || '',
+    ai_api_key_configured: Boolean(user.ai_api_key),
+    ai_api_key_masked: user.ai_api_key ? '••••••••' + user.ai_api_key.slice(-4) : '',
   });
 });
 
@@ -31,13 +35,26 @@ settingsApp.put('/', async (c) => {
     return c.json({ error: validation.error || '设置参数有误' }, 400);
   }
 
-  const { reminder_days, send_hour, timezone } = validation.clean;
+  const { reminder_days, send_hour, timezone, ai_api_key, ai_base_url, ai_model } = validation.clean;
+
+  // Build dynamic update sql
+  const newAiKey = ai_api_key !== undefined ? ai_api_key : (user.ai_api_key || null);
+  const newAiUrl = ai_base_url !== undefined ? ai_base_url : (user.ai_base_url || null);
+  const newAiModel = ai_model !== undefined ? ai_model : (user.ai_model || null);
 
   await c.env.DB.prepare(`
     UPDATE users
-    SET reminder_days = ?, send_hour = ?, timezone = ?
+    SET reminder_days = ?, send_hour = ?, timezone = ?, ai_api_key = ?, ai_base_url = ?, ai_model = ?
     WHERE id = ?
-  `).bind(JSON.stringify(reminder_days), send_hour, timezone, user.id).run();
+  `).bind(
+    JSON.stringify(reminder_days),
+    send_hour,
+    timezone,
+    newAiKey,
+    newAiUrl,
+    newAiModel,
+    user.id
+  ).run();
 
   return c.json({
     success: true,
@@ -45,6 +62,10 @@ settingsApp.put('/', async (c) => {
       reminder_days,
       send_hour,
       timezone,
+      ai_base_url: newAiUrl || '',
+      ai_model: newAiModel || '',
+      ai_api_key_configured: Boolean(newAiKey),
+      ai_api_key_masked: newAiKey ? '••••••••' + newAiKey.slice(-4) : '',
     },
   });
 });

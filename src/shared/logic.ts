@@ -1,4 +1,4 @@
-import { Contract, ContractStatus, PendingReminderItem, UserSettings } from './types';
+import { Contract, ContractStatus, PendingReminderItem, UserSettings, ContractRecognizeResult } from './types';
 
 /**
  * Escapes characters for HTML safe rendering.
@@ -151,12 +151,31 @@ export function validateSettings(input: unknown): {
     timezone = s.timezone;
   }
 
+  // 4. Optional AI configuration
+  let aiApiKey: string | null | undefined = undefined;
+  if (s.ai_api_key !== undefined) {
+    aiApiKey = typeof s.ai_api_key === 'string' ? s.ai_api_key.trim() || null : null;
+  }
+
+  let aiBaseUrl: string | null | undefined = undefined;
+  if (s.ai_base_url !== undefined) {
+    aiBaseUrl = typeof s.ai_base_url === 'string' ? s.ai_base_url.trim() || null : null;
+  }
+
+  let aiModel: string | null | undefined = undefined;
+  if (s.ai_model !== undefined) {
+    aiModel = typeof s.ai_model === 'string' ? s.ai_model.trim() || null : null;
+  }
+
   return {
     valid: true,
     clean: {
       reminder_days: reminderDays,
       send_hour: sendHour,
       timezone,
+      ...(aiApiKey !== undefined ? { ai_api_key: aiApiKey } : {}),
+      ...(aiBaseUrl !== undefined ? { ai_base_url: aiBaseUrl } : {}),
+      ...(aiModel !== undefined ? { ai_model: aiModel } : {}),
     },
   };
 }
@@ -580,3 +599,118 @@ export function planUserReminders(params: {
     emailText,
   };
 }
+
+/**
+ * Normalizes a date string from OCR/LLM to YYYY-MM-DD format if valid.
+ */
+export function normalizeDateString(dateStr: unknown): string | null {
+  if (typeof dateStr !== 'string') return null;
+  const s = dateStr.trim();
+  if (!s) return null;
+
+  // Pattern 1: YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y, m, d] = s.split('-').map(Number);
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) return s;
+  }
+
+  // Pattern 2: YYYY/MM/DD or YYYY.MM.DD
+  const slashDotMatch = s.match(/^(\d{4})[./](\d{1,2})[./](\d{1,2})$/);
+  if (slashDotMatch) {
+    const y = slashDotMatch[1];
+    const m = slashDotMatch[2].padStart(2, '0');
+    const d = slashDotMatch[3].padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  // Pattern 3: YYYY年MM月DD日
+  const cnMatch = s.match(/^(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?$/);
+  if (cnMatch) {
+    const y = cnMatch[1];
+    const m = cnMatch[2].padStart(2, '0');
+    const d = cnMatch[3].padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  return null;
+}
+
+/**
+ * Normalizes an amount value from OCR/LLM to a valid positive number or null.
+ */
+export function normalizeAmount(amountVal: unknown): number | null {
+  if (typeof amountVal === 'number') {
+    return isNaN(amountVal) || amountVal < 0 ? null : Math.round(amountVal * 100) / 100;
+  }
+  if (typeof amountVal === 'string') {
+    const s = amountVal.trim();
+    if (!s) return null;
+    let clean = s.replace(/[¥,，￥\s元]/g, '');
+    if (/万$/.test(clean) || /万元$/.test(s)) {
+      const num = parseFloat(clean.replace('万', ''));
+      return isNaN(num) || num < 0 ? null : Math.round(num * 10000 * 100) / 100;
+    }
+    const num = parseFloat(clean);
+    return isNaN(num) || num < 0 ? null : Math.round(num * 100) / 100;
+  }
+  return null;
+}
+
+/**
+ * Parses and cleans contract recognition JSON response from an LLM.
+ * Handles markdown code fences, plain json, and dirty formatting.
+ */
+export function parseContractRecognitionJson(rawText: string): ContractRecognizeResult {
+  if (!rawText || typeof rawText !== 'string') {
+    return { confidence: 'low', summary: '未收到有效的模型返回内容' };
+  }
+
+  let jsonStr = rawText.trim();
+  const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (codeBlockMatch) {
+    jsonStr = codeBlockMatch[1].trim();
+  } else {
+    const firstBrace = jsonStr.indexOf('{');
+    const lastBrace = jsonStr.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
+    }
+  }
+
+  let parsed: any = {};
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch {
+    return {
+      confidence: 'low',
+      summary: '识别结果格式解析失败，请核对并手动填写',
+    };
+  }
+
+  const name = typeof parsed.name === 'string' ? parsed.name.trim().slice(0, 100) : undefined;
+  const client = typeof parsed.client === 'string' ? parsed.client.trim().slice(0, 100) : undefined;
+  const startDate = normalizeDateString(parsed.start_date);
+  const endDate = normalizeDateString(parsed.end_date);
+  const amount = normalizeAmount(parsed.amount);
+  const note = typeof parsed.note === 'string' ? parsed.note.trim().slice(0, 500) : null;
+  const summary = typeof parsed.summary === 'string' ? parsed.summary.trim().slice(0, 200) : undefined;
+
+  let confidence: 'high' | 'medium' | 'low' = 'low';
+  if (name && client && endDate) {
+    confidence = 'high';
+  } else if (name || client || endDate) {
+    confidence = 'medium';
+  }
+
+  return {
+    name,
+    client,
+    start_date: startDate,
+    end_date: endDate || undefined,
+    amount,
+    note,
+    summary,
+    confidence,
+  };
+}
+

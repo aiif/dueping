@@ -20,7 +20,26 @@ interface RecognizeOptions {
 }
 
 /**
+ * Converts a base64 string or data URL to an array of bytes for Cloudflare Workers AI.
+ */
+function base64ToByteArray(base64Str: string): number[] {
+  const commaIdx = base64Str.indexOf(',');
+  const cleanBase64 = commaIdx !== -1 ? base64Str.slice(commaIdx + 1) : base64Str;
+  const binaryString = atob(cleanBase64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return Array.from(bytes);
+}
+
+/**
  * Recognizes contract metadata from uploaded images.
+ * Priority 1: User's explicitly configured custom AI API (if provided in Settings)
+ * Priority 2 (Default Primary): Cloudflare Workers AI native binding (`@cf/meta/llama-3.2-11b-vision-instruct`)
+ * Priority 3: Global environment AI_API_KEY (if configured)
+ * Priority 4: Graceful Mock/Demo fallback for pure offline local dev without --remote
  */
 export async function recognizeContract({
   env,
@@ -31,17 +50,91 @@ export async function recognizeContract({
     throw new Error('请至少上传一张合同图片');
   }
 
-  // 1. Determine which AI configuration to use
   const customKey = user.ai_api_key?.trim();
-  const envKey = (env as any).AI_API_KEY?.trim();
-  const apiKey = customKey || envKey;
 
-  const baseUrl = (user.ai_base_url?.trim() || (env as any).AI_BASE_URL?.trim() || 'https://api.openai.com/v1').replace(/\/+$/, '');
-  const model = user.ai_model?.trim() || (env as any).AI_MODEL?.trim() || 'gpt-4o-mini';
+  // 1. If user explicitly provided a private custom API key in settings, use it
+  if (customKey) {
+    const baseUrl = (user.ai_base_url?.trim() || 'https://api.openai.com/v1').replace(/\/+$/, '');
+    const model = user.ai_model?.trim() || 'gpt-4o-mini';
 
-  // 2. If API Key is configured, use OpenAI-compatible multimodal endpoint
-  if (apiKey) {
+    const messagesContent: any[] = [
+      {
+        type: 'text',
+        text: '请仔细识别以下合同图片，提取关键信息并输出合法 JSON。',
+      },
+    ];
+
+    for (const img of images.slice(0, 5)) {
+      messagesContent.push({
+        type: 'image_url',
+        image_url: {
+          url: img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`,
+        },
+      });
+    }
+
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${customKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: messagesContent },
+        ],
+        temperature: 0.1,
+        max_tokens: 1000,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      throw new Error(`自定义 AI 接口响应错误 (${response.status}): ${errorText.slice(0, 200)}`);
+    }
+
+    const data: any = await response.json();
+    const rawText = data?.choices?.[0]?.message?.content || '';
+    const parsed = parseContractRecognitionJson(rawText);
+    return {
+      ...parsed,
+      is_mock: false,
+    };
+  }
+
+  // 2. Primary / Default Engine: Cloudflare Native Workers AI
+  if (env.AI) {
     try {
+      const imageBytes = base64ToByteArray(images[0]);
+      const cfAiRes = await env.AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
+        prompt: `${SYSTEM_PROMPT}\n\n请仔细审阅图片中的合同内容并提取关键信息，输出合法的 JSON 格式。`,
+        image: imageBytes,
+        max_tokens: 1024,
+      });
+
+      const responseText = (cfAiRes as any)?.response || '';
+      if (responseText) {
+        const parsed = parseContractRecognitionJson(responseText);
+        return {
+          ...parsed,
+          is_mock: false,
+        };
+      }
+    } catch (cfAiError: any) {
+      console.warn('[Cloudflare Workers AI execution note]', cfAiError?.message || cfAiError);
+      // Miniflare in pure local mode without --remote cannot run remote GPU models locally
+    }
+  }
+
+  // 3. Fallback: Global AI_API_KEY if configured in wrangler vars/secrets
+  const envKey = (env as any).AI_API_KEY?.trim();
+  if (envKey) {
+    try {
+      const baseUrl = ((env as any).AI_BASE_URL?.trim() || 'https://api.openai.com/v1').replace(/\/+$/, '');
+      const model = (env as any).AI_MODEL?.trim() || 'gpt-4o-mini';
+
       const messagesContent: any[] = [
         {
           type: 'text',
@@ -62,7 +155,7 @@ export async function recognizeContract({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
+          Authorization: `Bearer ${envKey}`,
         },
         body: JSON.stringify({
           model,
@@ -75,31 +168,22 @@ export async function recognizeContract({
         }),
       });
 
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        throw new Error(`AI 接口响应错误 (${response.status}): ${errorText.slice(0, 200)}`);
+      if (response.ok) {
+        const data: any = await response.json();
+        const rawText = data?.choices?.[0]?.message?.content || '';
+        const parsed = parseContractRecognitionJson(rawText);
+        return {
+          ...parsed,
+          is_mock: false,
+        };
       }
-
-      const data: any = await response.json();
-      const rawText = data?.choices?.[0]?.message?.content || '';
-      const parsed = parseContractRecognitionJson(rawText);
-      return {
-        ...parsed,
-        is_mock: false,
-      };
-    } catch (err: any) {
-      console.error('[AI Recognition Error]', err);
-      // If user provided a specific custom key, report the explicit error
-      if (customKey) {
-        throw new Error(`自定义 AI 识别失败: ${err.message || '网络连接超时'}`);
-      }
-      // If it was global key, we can fall back to mock demo with informative notice
-      console.warn('Falling back to demo mode due to AI provider error');
+    } catch (fallbackError) {
+      console.warn('[Fallback API Error]', fallbackError);
     }
   }
 
-  // 3. Fallback: Demo / Mock recognition when no API key is set
-  // This ensures the application remains testable and fully functional in pure local/demo environments
+  // 4. Offline / Local Dev Demo Fallback
+  // Ensures automated CI/smoke test and local developer onboarding work smoothly without cloud GPU dependency
   const today = new Date();
   const nextYear = new Date(today);
   nextYear.setFullYear(today.getFullYear() + 1);
@@ -114,7 +198,7 @@ export async function recognizeContract({
     end_date: formatD(nextYear),
     amount: 158000,
     note: '付款节点：合同签订后付30%，初验通过付50%，质保期满1年后结清20%尾款。到期前30日需确认续签意向。',
-    summary: '【演示模式识别】系统未配置 AI_API_KEY，已自动填充演示合同数据。您可在设置中配置私有 API Key 开启全自动真实识别。',
+    summary: '【Workers AI 本地模拟】本地开发未连 Cloudflare 远端 GPU 时自动展示示例数据。线上环境自动调用原生 Cloudflare Workers AI。',
     confidence: 'high',
     is_mock: true,
   };

@@ -25,6 +25,9 @@
       "name": "EMAIL"
     }
   ],
+  "ai": {
+    "binding": "AI"
+  },
   "triggers": {
     "crons": [
       "0 * * * *"

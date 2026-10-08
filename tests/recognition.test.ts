@@ -122,6 +122,53 @@ describe('10. 合同 AI 识别逻辑与数据规范化', () => {
     expect(res.is_mock).toBe(true);
   });
 
+  it('优先调用 Cloudflare Workers AI 原生模型提取合同信息', async () => {
+    let calledModel = '';
+    let calledPrompt = '';
+
+    const mockEnv = {
+      AI: {
+        run: async (model: string, input: any) => {
+          calledModel = model;
+          calledPrompt = input.prompt;
+          return {
+            response: JSON.stringify({
+              name: 'Cloudflare原生算力服务合同',
+              client: 'Cloudflare Inc.',
+              start_date: '2026-05-01',
+              end_date: '2027-04-30',
+              amount: 88000,
+              note: '由 Workers AI 原生多模态大模型提取',
+            }),
+          };
+        },
+      },
+    };
+
+    const fakeUser: User = {
+      id: 'u1',
+      email: 'test@example.com',
+      reminder_days: [30, 15, 7],
+      send_hour: 9,
+      timezone: 'Asia/Shanghai',
+      created_at: new Date().toISOString(),
+    };
+
+    const res = await recognizeContract({
+      env: mockEnv as any,
+      user: fakeUser,
+      images: ['data:image/jpeg;base64,ZmFrZQ=='],
+    });
+
+    expect(calledModel).toBe('@cf/meta/llama-3.2-11b-vision-instruct');
+    expect(res.name).toBe('Cloudflare原生算力服务合同');
+    expect(res.client).toBe('Cloudflare Inc.');
+    expect(res.start_date).toBe('2026-05-01');
+    expect(res.end_date).toBe('2027-04-30');
+    expect(res.amount).toBe(88000);
+    expect(res.is_mock).toBe(false);
+  });
+
   it('设置校验支持保存自定义 AI 配置字段', () => {
     const valid = validateSettings({
       reminder_days: [30, 15, 7],

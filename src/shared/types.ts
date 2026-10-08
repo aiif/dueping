@@ -159,7 +159,8 @@ export interface ContractRecognizeResult {
 }
 
 export interface ContractRecognizeRequest {
-  images: string[];
+  images?: string[];
+  text?: string;
   model?: string;
   prompt?: string;
 }

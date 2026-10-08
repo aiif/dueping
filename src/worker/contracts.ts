@@ -20,9 +20,10 @@ contractsApp.post('/recognize', async (c) => {
 
   const body = await c.req.json().catch(() => ({}));
   const images = Array.isArray(body?.images) ? body.images : [];
+  const text = typeof body?.text === 'string' ? body.text.trim() : '';
   const model = typeof body?.model === 'string' ? body.model : undefined;
-  if (images.length === 0) {
-    return c.json({ error: '请上传至少一张合同图片' }, 400);
+  if (images.length === 0 && !text) {
+    return c.json({ error: '请上传合同图片或输入合同文本' }, 400);
   }
 
   try {
@@ -30,11 +31,12 @@ contractsApp.post('/recognize', async (c) => {
       env: c.env,
       user,
       images,
+      text,
       model,
     });
     return c.json({ success: true, result });
   } catch (err: any) {
-    return c.json({ error: err.message || '合同识别失败，请核对图片后重试' }, 500);
+    return c.json({ error: err.message || '合同识别失败，请重试' }, 500);
   }
 });
 

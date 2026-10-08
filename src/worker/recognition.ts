@@ -1,11 +1,11 @@
 import { ContractRecognizeResult, User } from '../shared/types';
 import { parseContractRecognitionJson } from '../shared/logic';
 
-const SYSTEM_PROMPT = `你是一个专业的合同审计与信息抽取专家。用户会提供一份合同的一页或多页图片（可能包含封面、正文条款、签署盖章页）。
-请仔细阅读图片内容，提取以下合同核心字段并严格以 JSON 格式输出：
+const SYSTEM_PROMPT = `你是一个专业的合同审计与信息抽取专家。用户会提供一份合同的图片（可能包含多页）或合同文本内容。
+请仔细阅读提供的内容，提取以下合同核心字段并严格以 JSON 格式输出：
 1. "name": 合同全称（例如："企业级技术咨询服务合同"、"2026年度房屋租赁协议"）
 2. "client": 甲方名称（即委托方/承租方/采购方/客户公司或个人的法定全称）
-3. "start_date": 合同生效/起始日期（格式必须为 YYYY-MM-DD，若图片中未体现请填 null）
+3. "start_date": 合同生效/起始日期（格式必须为 YYYY-MM-DD，若内容中未体现请填 null）
 4. "end_date": 合同到期/终止日期（格式必须为 YYYY-MM-DD。若合同写为"自生效日起一年"等相对期限，请结合起始日推算；若无法确定具体年份按当前时间或合同签署年推算）
 5. "amount": 合同总金额（纯数字，单位元人民币，例如 50000。若无明确固定总额填 null）
 6. "note": 关键备注信息（提取核心付款阶段、违约条款、续签通知期、联系人等，200字以内，若无填 null）
@@ -16,7 +16,8 @@ const SYSTEM_PROMPT = `你是一个专业的合同审计与信息抽取专家。
 interface RecognizeOptions {
   env: Env;
   user: User;
-  images: string[];
+  images?: string[];
+  text?: string;
   model?: string;
 }
 
@@ -81,10 +82,14 @@ export async function recognizeContract({
   env,
   user,
   images,
+  text,
   model,
 }: RecognizeOptions): Promise<ContractRecognizeResult> {
-  if (!images || images.length === 0) {
-    throw new Error('请至少上传一张合同图片');
+  const hasImages = Array.isArray(images) && images.length > 0;
+  const cleanText = typeof text === 'string' ? text.trim() : '';
+
+  if (!hasImages && !cleanText) {
+    throw new Error('请至少上传一张合同图片或输入合同文本');
   }
 
   const customKey = user.ai_api_key?.trim();
@@ -100,63 +105,85 @@ export async function recognizeContract({
       const cfModelId = selectedModel.startsWith('@cf/') ? selectedModel : '@cf/meta/llama-3.2-11b-vision-instruct';
       let responseText = '';
 
-      if (cfModelId.includes('moondream')) {
-        // Moondream 3.1: Special task: query format
-        const dataUrl = images[0].startsWith('data:') ? images[0] : `data:image/jpeg;base64,${images[0]}`;
-        const queryPrompt = `请提取图片中合同信息并以 JSON 格式输出：{"name":合同全称,"client":甲方公司名称,"start_date":合同生效日期YYYY-MM-DD,"end_date":合同到期终止日期YYYY-MM-DD,"amount":合同总金额数值,"note":关键付款或续签条款,"summary":合同总结}`;
-        const res = await callCloudflareAiWithLicenseAgreement(env, cfModelId, {
-          task: 'query',
-          image: dataUrl,
-          question: queryPrompt,
-          reasoning: false,
-          max_tokens: 1500,
-        });
-        responseText = (res as any)?.answer || (res as any)?.response || '';
-      } else if (cfModelId.includes('llava')) {
-        // LLaVA 1.5 7B: prompt + image byte array
-        const imageBytes = base64ToByteArray(images[0]);
-        const res = await callCloudflareAiWithLicenseAgreement(env, cfModelId, {
-          prompt: `${SYSTEM_PROMPT}\n\n请提取合同关键信息并输出合法 JSON。`,
-          image: imageBytes,
-          max_tokens: 1500,
-        });
-        responseText = (res as any)?.description || (res as any)?.response || '';
-      } else {
-        // Llama 3.2 11B Vision / Llama 4 Scout: Modern multi-image multimodal messages format
-        const userContent: any[] = [
-          {
-            type: 'text',
-            text: `你是一个专业的合同审计与信息抽取专家。用户提供了该合同的 ${images.length} 张图片（按合同顺序排列，可能包含封面、条款细则、起止日期、金额与签署页等）。\n请综合审阅所有图片中的完整信息，提取合同核心字段并严格以 JSON 格式输出：\n${SYSTEM_PROMPT}`,
-          },
-        ];
-
-        for (const img of images.slice(0, 5)) {
-          const dataUrl = img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`;
-          userContent.push({
-            type: 'image_url',
-            image_url: { url: dataUrl },
-          });
-        }
-
+      if (cleanText) {
+        // Text recognition mode via Workers AI
         try {
           const res = await callCloudflareAiWithLicenseAgreement(env, cfModelId, {
             messages: [
               { role: 'system', content: SYSTEM_PROMPT },
-              { role: 'user', content: userContent },
+              { role: 'user', content: `合同文本内容如下：\n\n${cleanText}\n\n请提取合同核心字段并严格以 JSON 格式输出。` },
             ],
             max_tokens: 1500,
           });
           responseText = (res as any)?.response || (res as any)?.content || '';
         } catch (msgErr: any) {
-          console.warn(`[Cloudflare Workers AI] messages mode note for ${cfModelId}:`, msgErr?.message || msgErr);
-          // Fallback to prompt + image byte array if messages format is not accepted
+          console.warn(`[Cloudflare Workers AI] text messages mode note for ${cfModelId}:`, msgErr?.message || msgErr);
+          const res = await callCloudflareAiWithLicenseAgreement(env, cfModelId, {
+            prompt: `${SYSTEM_PROMPT}\n\n合同文本内容如下：\n\n${cleanText}\n\n请提取合同核心字段并严格以 JSON 格式输出。`,
+            max_tokens: 1500,
+          });
+          responseText = (res as any)?.response || (res as any)?.description || '';
+        }
+      } else if (images && images.length > 0) {
+        // Image recognition mode via Workers AI
+        if (cfModelId.includes('moondream')) {
+          // Moondream 3.1: Special task: query format
+          const dataUrl = images[0].startsWith('data:') ? images[0] : `data:image/jpeg;base64,${images[0]}`;
+          const queryPrompt = `请提取图片中合同信息并以 JSON 格式输出：{"name":合同全称,"client":甲方公司名称,"start_date":合同生效日期YYYY-MM-DD,"end_date":合同到期终止日期YYYY-MM-DD,"amount":合同总金额数值,"note":关键付款或续签条款,"summary":合同总结}`;
+          const res = await callCloudflareAiWithLicenseAgreement(env, cfModelId, {
+            task: 'query',
+            image: dataUrl,
+            question: queryPrompt,
+            reasoning: false,
+            max_tokens: 1500,
+          });
+          responseText = (res as any)?.answer || (res as any)?.response || '';
+        } else if (cfModelId.includes('llava')) {
+          // LLaVA 1.5 7B: prompt + image byte array
           const imageBytes = base64ToByteArray(images[0]);
           const res = await callCloudflareAiWithLicenseAgreement(env, cfModelId, {
-            prompt: `${SYSTEM_PROMPT}\n\n请仔细审阅图片中的合同内容并提取关键信息，输出合法的 JSON 格式。`,
+            prompt: `${SYSTEM_PROMPT}\n\n请提取合同关键信息并输出合法 JSON。`,
             image: imageBytes,
             max_tokens: 1500,
           });
-          responseText = (res as any)?.response || '';
+          responseText = (res as any)?.description || (res as any)?.response || '';
+        } else {
+          // Llama 3.2 11B Vision / Llama 4 Scout: Modern multi-image multimodal messages format
+          const userContent: any[] = [
+            {
+              type: 'text',
+              text: `你是一个专业的合同审计与信息抽取专家。用户提供了该合同的 ${images.length} 张图片（按合同顺序排列，可能包含封面、条款细则、起止日期、金额与签署页等）。\n请综合审阅所有图片中的完整信息，提取合同核心字段并严格以 JSON 格式输出：\n${SYSTEM_PROMPT}`,
+            },
+          ];
+
+          for (const img of images.slice(0, 5)) {
+            const dataUrl = img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`;
+            userContent.push({
+              type: 'image_url',
+              image_url: { url: dataUrl },
+            });
+          }
+
+          try {
+            const res = await callCloudflareAiWithLicenseAgreement(env, cfModelId, {
+              messages: [
+                { role: 'system', content: SYSTEM_PROMPT },
+                { role: 'user', content: userContent },
+              ],
+              max_tokens: 1500,
+            });
+            responseText = (res as any)?.response || (res as any)?.content || '';
+          } catch (msgErr: any) {
+            console.warn(`[Cloudflare Workers AI] messages mode note for ${cfModelId}:`, msgErr?.message || msgErr);
+            // Fallback to prompt + image byte array if messages format is not accepted
+            const imageBytes = base64ToByteArray(images[0]);
+            const res = await callCloudflareAiWithLicenseAgreement(env, cfModelId, {
+              prompt: `${SYSTEM_PROMPT}\n\n请仔细审阅图片中的合同内容并提取关键信息，输出合法的 JSON 格式。`,
+              image: imageBytes,
+              max_tokens: 1500,
+            });
+            responseText = (res as any)?.response || '';
+          }
         }
       }
 
@@ -190,20 +217,24 @@ export async function recognizeContract({
   if (customKey && !selectedModel.startsWith('@cf/')) {
     const baseUrl = (user.ai_base_url?.trim() || 'https://api.openai.com/v1').replace(/\/+$/, '');
 
-    const messagesContent: any[] = [
-      {
-        type: 'text',
-        text: `请仔细审阅以下上传的 ${images.length} 张合同图片，提取合同核心字段并输出合法 JSON 格式：\n${SYSTEM_PROMPT}`,
-      },
-    ];
-
-    for (const img of images.slice(0, 5)) {
-      messagesContent.push({
-        type: 'image_url',
-        image_url: {
-          url: img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`,
+    let userContent: any;
+    if (cleanText) {
+      userContent = `合同文本内容如下：\n\n${cleanText}\n\n请提取合同核心字段并输出合法 JSON 格式。`;
+    } else {
+      userContent = [
+        {
+          type: 'text',
+          text: `请仔细审阅以下上传的 ${images!.length} 张合同图片，提取合同核心字段并输出合法 JSON 格式：\n${SYSTEM_PROMPT}`,
         },
-      });
+      ];
+      for (const img of (images || []).slice(0, 5)) {
+        userContent.push({
+          type: 'image_url',
+          image_url: {
+            url: img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`,
+          },
+        });
+      }
     }
 
     const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -216,7 +247,7 @@ export async function recognizeContract({
         model: selectedModel,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: messagesContent },
+          { role: 'user', content: userContent },
         ],
         temperature: 0.1,
         max_tokens: 1200,
@@ -245,20 +276,24 @@ export async function recognizeContract({
       const baseUrl = ((env as any).AI_BASE_URL?.trim() || 'https://api.openai.com/v1').replace(/\/+$/, '');
       const externalModel = (env as any).AI_MODEL?.trim() || 'gpt-4o-mini';
 
-      const messagesContent: any[] = [
-        {
-          type: 'text',
-          text: `请仔细审阅以下 ${images.length} 张合同图片，提取关键信息并输出合法 JSON。`,
-        },
-      ];
-
-      for (const img of images.slice(0, 5)) {
-        messagesContent.push({
-          type: 'image_url',
-          image_url: {
-            url: img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`,
+      let userContent: any;
+      if (cleanText) {
+        userContent = `合同文本内容如下：\n\n${cleanText}\n\n请提取合同核心字段并输出合法 JSON 格式。`;
+      } else {
+        userContent = [
+          {
+            type: 'text',
+            text: `请仔细审阅以下 ${images!.length} 张合同图片，提取关键信息并输出合法 JSON。`,
           },
-        });
+        ];
+        for (const img of (images || []).slice(0, 5)) {
+          userContent.push({
+            type: 'image_url',
+            image_url: {
+              url: img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`,
+            },
+          });
+        }
       }
 
       const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -271,7 +306,7 @@ export async function recognizeContract({
           model: externalModel,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: messagesContent },
+            { role: 'user', content: userContent },
           ],
           temperature: 0.1,
           max_tokens: 1200,
@@ -301,14 +336,39 @@ export async function recognizeContract({
   const pad = (n: number) => String(n).padStart(2, '0');
   const formatD = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
+  let demoName = '信息化系统建设与技术运维服务合同';
+  let demoClient = '北京智联科创技术有限公司';
+  let demoAmount = 158000;
+  let demoNote = '付款节点：合同签订后付30%，初验通过付50%，质保期满1年后结清20%尾款。到期前30日需确认续签意向。';
+
+  if (cleanText) {
+    const lines = cleanText.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (lines.length > 0 && lines[0].length <= 35) {
+      demoName = lines[0].replace(/^[#*•\s]+/, '').replace(/[：:]/g, '');
+    }
+    const clientMatch = cleanText.match(/(?:甲方|委托方|采购方|承租方|客户)[：:\s]*([^\n,，;；]{2,30})/);
+    if (clientMatch && clientMatch[1]) {
+      demoClient = clientMatch[1].trim();
+    }
+    const amountMatch = cleanText.match(/(?:金额|总价|总计|总额|费用)[：:\s]*([0-9,，.]+)\s*(?:元|万元)?/);
+    if (amountMatch && amountMatch[1]) {
+      const rawNum = parseFloat(amountMatch[1].replace(/,/g, ''));
+      if (!isNaN(rawNum)) {
+        demoAmount = cleanText.includes('万元') && rawNum < 10000 ? Math.round(rawNum * 10000) : Math.round(rawNum);
+      }
+    }
+  }
+
   return {
-    name: '信息化系统建设与技术运维服务合同',
-    client: '北京智联科创技术有限公司',
+    name: demoName,
+    client: demoClient,
     start_date: formatD(today),
     end_date: formatD(nextYear),
-    amount: 158000,
-    note: '付款节点：合同签订后付30%，初验通过付50%，质保期满1年后结清20%尾款。到期前30日需确认续签意向。',
-    summary: '【本地离线演示模式】当前处于本地无 GPU 环境，已载入示例数据。线上环境会自动通过 Cloudflare Workers AI 原生识别。',
+    amount: demoAmount,
+    note: demoNote,
+    summary: cleanText
+      ? '【离线演示】已基于您输入的合同文本智能提取关键信息。线上环境将由 Cloudflare Workers AI 进行深度识别。'
+      : '【离线演示】当前处于本地无 GPU 环境，已载入示例数据。线上环境会自动通过 Cloudflare Workers AI 原生识别。',
     confidence: 'high',
     model_used: selectedModel,
     is_mock: true,

@@ -266,6 +266,52 @@ describe('10. 合同 AI 识别逻辑与数据规范化', () => {
     expect(imageUrls.length).toBe(2);
   });
 
+  it('支持直接输入合同文本进行 AI 提取识别', async () => {
+    let capturedOptions: any = null;
+    const mockEnv = {
+      AI: {
+        run: async (model: string, options: any) => {
+          capturedOptions = options;
+          return {
+            response: JSON.stringify({
+              name: 'SaaS云平台年度订阅技术合同',
+              client: '杭州未来互联科技有限公司',
+              start_date: '2026-07-01',
+              end_date: '2027-06-30',
+              amount: 99000,
+              note: '支持合同文本直接粘入提取',
+            }),
+          };
+        },
+      },
+    };
+
+    const fakeUser: User = {
+      id: 'u1',
+      email: 'test@example.com',
+      reminder_days: [30, 15, 7],
+      send_hour: 9,
+      timezone: 'Asia/Shanghai',
+      created_at: new Date().toISOString(),
+    };
+
+    const rawContractText = `合同名称：SaaS云平台年度订阅技术合同\n甲方：杭州未来互联科技有限公司\n有效期：2026年7月1日至2027年6月30日\n费用：人民币99,000元整`;
+    const res = await recognizeContract({
+      env: mockEnv as any,
+      user: fakeUser,
+      text: rawContractText,
+      model: '@cf/meta/llama-3.2-11b-vision-instruct',
+    });
+
+    expect(res.name).toBe('SaaS云平台年度订阅技术合同');
+    expect(res.client).toBe('杭州未来互联科技有限公司');
+    expect(res.amount).toBe(99000);
+    expect(res.start_date).toBe('2026-07-01');
+    expect(res.end_date).toBe('2027-06-30');
+    expect(capturedOptions.messages).toBeDefined();
+    expect(capturedOptions.messages[1].content).toContain(rawContractText);
+  });
+
   it('设置校验支持保存自定义 AI 配置字段', () => {
     const valid = validateSettings({
       reminder_days: [30, 15, 7],

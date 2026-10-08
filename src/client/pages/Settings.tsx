@@ -34,9 +34,11 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
   );
 
   // AI Configuration State
+  const [aiTab, setAiTab] = useState<'cf' | 'custom'>('cf'); // 默认显示 cf 原生配置
+  const [cfModel, setCfModel] = useState<string>(CF_AI_VISION_MODELS[0].id);
+  const [customModel, setCustomModel] = useState<string>('');
   const [aiApiKeyInput, setAiApiKeyInput] = useState('');
   const [aiBaseUrlInput, setAiBaseUrlInput] = useState('');
-  const [aiModelInput, setAiModelInput] = useState('');
   const [aiKeyConfigured, setAiKeyConfigured] = useState(false);
   const [aiKeyMasked, setAiKeyMasked] = useState('');
 
@@ -59,7 +61,13 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
     api.get<any>('/api/settings').then((data) => {
       if (data) {
         if (data.ai_base_url) setAiBaseUrlInput(data.ai_base_url);
-        if (data.ai_model) setAiModelInput(data.ai_model);
+        if (data.ai_model) {
+          if (data.ai_model.startsWith('@cf/')) {
+            setCfModel(data.ai_model);
+          } else {
+            setCustomModel(data.ai_model);
+          }
+        }
         if (data.ai_api_key_configured) {
           setAiKeyConfigured(true);
           setAiKeyMasked(data.ai_api_key_masked || '••••••••');
@@ -92,15 +100,18 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
       .filter(Boolean)
       .map((s) => Number(s));
 
+    const finalAiModel = aiTab === 'cf' ? (cfModel || CF_AI_VISION_MODELS[0].id) : (customModel.trim() || null);
+    const finalBaseUrl = aiTab === 'custom' ? (aiBaseUrlInput.trim() || null) : (aiBaseUrlInput.trim() || null);
+
     const candidateSettings: any = {
       reminder_days: rawDays,
       send_hour: Number(sendHour),
       timezone: activeTimezone,
-      ai_base_url: aiBaseUrlInput.trim() || null,
-      ai_model: aiModelInput.trim() || null,
+      ai_base_url: finalBaseUrl,
+      ai_model: finalAiModel,
     };
 
-    if (aiApiKeyInput.trim()) {
+    if (aiTab === 'custom' && aiApiKeyInput.trim()) {
       candidateSettings.ai_api_key = aiApiKeyInput.trim();
     }
 
@@ -118,7 +129,7 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
       setSendHour(res.settings.send_hour);
       setTimezone(res.settings.timezone);
 
-      if (aiApiKeyInput.trim()) {
+      if (aiTab === 'custom' && aiApiKeyInput.trim()) {
         setAiKeyConfigured(true);
         setAiKeyMasked('••••••••' + aiApiKeyInput.trim().slice(-4));
         setAiApiKeyInput('');
@@ -331,116 +342,170 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
 
           {/* AI Recognition Engine Settings */}
           <div className="pt-4 border-t border-gray-100">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-3">
               <div>
                 <label className="block text-sm font-semibold text-gray-900 flex items-center gap-1.5">
-                  <span>📸</span>
-                  <span>AI 视觉识别引擎配置 (可选)</span>
+                  <span className="text-base">🧠</span>
+                  <span>AI 识别引擎配置 (可选)</span>
                 </label>
-                <p className="mt-1 text-xs text-gray-500">
-                  用于通过拍照或上传合同图片自动识别提取合同信息。系统已内置演示模式与系统默认配置，您亦可在此配置私有大模型 API。
+                <p className="mt-0.5 text-xs text-gray-500">
+                  用于通过图片或粘贴文本自动识别提取合同信息。系统原生支持 Cloudflare Workers AI，亦可配置外部 API。
                 </p>
               </div>
             </div>
 
-            <div className="mt-3 space-y-3 max-w-lg">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
-                  API 基础地址 (Base URL)
-                </label>
-                <input
-                  type="text"
-                  value={aiBaseUrlInput}
-                  onChange={(e) => setAiBaseUrlInput(e.target.value)}
-                  placeholder="留空则使用默认 (https://api.openai.com/v1)"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-medium text-gray-700">
-                    API 密钥 (API Key)
-                  </label>
-                  {aiKeyConfigured && (
-                    <button
-                      type="button"
-                      onClick={handleClearAiKey}
-                      className="text-xs text-red-600 hover:text-red-800"
-                    >
-                      清除当前密钥
-                    </button>
-                  )}
-                </div>
-                <input
-                  type="password"
-                  value={aiApiKeyInput}
-                  onChange={(e) => setAiApiKeyInput(e.target.value)}
-                  placeholder={aiKeyConfigured ? `已配置 (${aiKeyMasked})，输入新密钥可覆盖` : 'sk-... (如留空则使用系统预设或演示模式)'}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Cloudflare 原生视觉模型（按性价比从高到低排列）
-                </label>
-                <select
-                  value={
-                    CF_AI_VISION_MODELS.some((m) => m.id === aiModelInput)
-                      ? aiModelInput
-                      : aiModelInput
-                      ? 'custom'
-                      : CF_AI_VISION_MODELS[0].id
-                  }
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === 'custom') {
-                      setAiModelInput(aiModelInput.startsWith('@cf/') ? '' : aiModelInput);
-                    } else {
-                      setAiModelInput(val);
-                    }
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white font-medium"
+            {/* Tab switchers: CF 原生 vs 自定义第三方 API */}
+            <div className="max-w-xl">
+              <div className="flex p-1 bg-gray-100 rounded-xl space-x-1 text-xs font-medium mb-4">
+                <button
+                  type="button"
+                  onClick={() => setAiTab('cf')}
+                  className={`flex-1 py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    aiTab === 'cf'
+                      ? 'bg-white text-indigo-700 shadow-xs font-semibold'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
                 >
-                  {CF_AI_VISION_MODELS.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      #{m.costRank} {m.name} [{m.badge}] - {m.pricingDesc}
-                    </option>
-                  ))}
-                  <option value="custom">其他自定义外部模型 (如 gpt-4o-mini 等)...</option>
-                </select>
+                  <span>⚡</span>
+                  <span>Cloudflare 原生引擎</span>
+                  <span className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-normal">
+                    推荐 / 默认
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAiTab('custom')}
+                  className={`flex-1 py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    aiTab === 'custom'
+                      ? 'bg-white text-gray-900 shadow-xs font-semibold'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <span>🔑</span>
+                  <span>自定义第三方 API</span>
+                  <span className="text-[10px] bg-gray-200/70 text-gray-600 px-1.5 py-0.5 rounded font-normal">
+                    兼容 OpenAI
+                  </span>
+                </button>
+              </div>
 
-                {/* Custom model input if user wants to use non-CF model */}
-                {(!CF_AI_VISION_MODELS.some((m) => m.id === aiModelInput) && aiModelInput !== '') && (
-                  <div className="mt-2">
-                    <input
-                      type="text"
-                      value={aiModelInput}
-                      onChange={(e) => setAiModelInput(e.target.value)}
-                      placeholder="输入自定义模型名称，例如 gpt-4o-mini 或 qwen-vl-plus"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"
-                    />
+              {/* Tab 1: Cloudflare Native Settings */}
+              {aiTab === 'cf' && (
+                <div className="space-y-3.5 bg-indigo-50/30 border border-indigo-100/70 p-4 rounded-xl">
+                  <div className="flex items-start gap-2 text-xs text-indigo-900 bg-indigo-100/60 p-2.5 rounded-lg border border-indigo-200/50">
+                    <span className="text-sm">✨</span>
+                    <span className="leading-relaxed">
+                      <strong>开箱即用，免配置 Key：</strong>由 Cloudflare 全球边缘 Workers AI 原生算力直接驱动，具备极高性价比与低网络延迟。
+                    </span>
                   </div>
-                )}
 
-                {/* Model features note */}
-                <div className="mt-1.5 text-xs text-indigo-700 bg-indigo-50/70 p-2 rounded-lg border border-indigo-100">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                      Cloudflare 原生视觉模型（按性价比从高到低排列）
+                    </label>
+                    <select
+                      value={cfModel}
+                      onChange={(e) => setCfModel(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-medium"
+                    >
+                      {CF_AI_VISION_MODELS.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          #{m.costRank} {m.name} [{m.badge}] - {m.pricingDesc}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Active CF Model Features Detail */}
                   {(() => {
-                    const currentModelId = aiModelInput || CF_AI_VISION_MODELS[0].id;
-                    const matched = CF_AI_VISION_MODELS.find((m) => m.id === currentModelId);
-                    if (matched) {
-                      return (
-                        <>
-                          <span className="font-semibold text-indigo-900">{matched.badge}：</span>
-                          {matched.features}（{matched.pricingDesc}）
-                        </>
-                      );
-                    }
-                    return '当前使用您指定的自定义外部模型。';
+                    const matched = CF_AI_VISION_MODELS.find((m) => m.id === cfModel) || CF_AI_VISION_MODELS[0];
+                    return (
+                      <div className="p-3 bg-white rounded-lg border border-indigo-100 text-xs space-y-1 shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-indigo-950 flex items-center gap-1">
+                            <span>🏷️ 模型特性：</span>
+                            <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-[11px] font-medium">{matched.badge}</span>
+                          </span>
+                          <span className="text-gray-500 font-mono text-[11px]">{matched.pricingDesc}</span>
+                        </div>
+                        <p className="text-gray-600 leading-relaxed pt-0.5">{matched.features}</p>
+                      </div>
+                    );
                   })()}
                 </div>
-              </div>
+              )}
+
+              {/* Tab 2: Custom External API Settings */}
+              {aiTab === 'custom' && (
+                <div className="space-y-3.5 bg-gray-50/70 border border-gray-200 p-4 rounded-xl">
+                  <div className="text-xs text-gray-600 bg-white p-2.5 rounded-lg border border-gray-200/70">
+                    💡 <strong>自备服务配置：</strong>适用于使用您自备的 OpenAI、Gemini、通义千问或 DeepSeek 等兼容 OpenAI 格式的多模态 API 服务。
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      API 基础地址 (Base URL)
+                    </label>
+                    <input
+                      type="text"
+                      value={aiBaseUrlInput}
+                      onChange={(e) => setAiBaseUrlInput(e.target.value)}
+                      placeholder="留空则使用默认 (https://api.openai.com/v1)"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-gray-700">
+                        API 密钥 (API Key)
+                      </label>
+                      {aiKeyConfigured && (
+                        <button
+                          type="button"
+                          onClick={handleClearAiKey}
+                          className="text-xs text-red-600 hover:text-red-800 font-medium cursor-pointer"
+                        >
+                          清除当前密钥
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="password"
+                      value={aiApiKeyInput}
+                      onChange={(e) => setAiApiKeyInput(e.target.value)}
+                      placeholder={aiKeyConfigured ? `已配置 (${aiKeyMasked})，输入新密钥可覆盖` : 'sk-...'}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      自定义模型名称 (Model)
+                    </label>
+                    <input
+                      type="text"
+                      value={customModel}
+                      onChange={(e) => setCustomModel(e.target.value)}
+                      placeholder="例如：gpt-4o-mini、qwen-vl-plus、gemini-1.5-flash"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs bg-white"
+                    />
+                    <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-gray-500">
+                      <span>常用参考:</span>
+                      {['gpt-4o-mini', 'gpt-4o', 'qwen-vl-plus'].map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setCustomModel(m)}
+                          className="px-1.5 py-0.5 bg-gray-200/70 hover:bg-gray-300 text-gray-700 rounded transition-colors font-mono cursor-pointer"
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -1,0 +1,39 @@
+{
+  "name": "dueping",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typegen": "wrangler types",
+    "typecheck": "tsc -p tsconfig.client.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.tools.json",
+    "test": "vitest run --reporter=verbose",
+    "deploy": "npm run build && wrangler deploy",
+    "smoke": "bash scripts/smoke.sh",
+    "db:local": "wrangler d1 migrations apply dueping --local",
+    "db:remote": "wrangler d1 migrations apply dueping --remote",
+    "start:local": "wrangler dev --test-scheduled --port 8787"
+  },
+  "dependencies": {
+    "hono": "^4.13.13",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "wouter": "^3.13.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.63.0",
+    "@cloudflare/workers-types": "^5.20261008.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.3",
+    "wrangler": "^4.148.0"
+  }
+}

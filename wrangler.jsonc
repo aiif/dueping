@@ -1,0 +1,39 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "dueping",
+  "compatibility_date": "2026-10-08",
+  "main": "./src/worker/index.ts",
+  "vars": {
+    "FROM_ADDRESS": "noreply@dueping.toreal.site"
+  },
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": [
+      "/api/*",
+      "/__scheduled*"
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "dueping",
+      "database_id": "dueping"
+    }
+  ],
+  "send_email": [
+    {
+      "name": "EMAIL"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "0 * * * *"
+    ]
+  },
+  "routes": [
+    {
+      "pattern": "dueping.toreal.site",
+      "custom_domain": true
+    }
+  ]
+}

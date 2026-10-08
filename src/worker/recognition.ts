@@ -17,6 +17,7 @@ interface RecognizeOptions {
   env: Env;
   user: User;
   images: string[];
+  model?: string;
 }
 
 /**
@@ -36,26 +37,53 @@ function base64ToByteArray(base64Str: string): number[] {
 
 /**
  * Recognizes contract metadata from uploaded images.
- * Priority 1: User's explicitly configured custom AI API (if provided in Settings)
- * Priority 2 (Default Primary): Cloudflare Workers AI native binding (`@cf/meta/llama-3.2-11b-vision-instruct`)
- * Priority 3: Global environment AI_API_KEY (if configured)
- * Priority 4: Graceful Mock/Demo fallback for pure offline local dev without --remote
+ * Supports choosing from Cloudflare Workers AI models (ordered by cost-performance) or custom external models.
  */
 export async function recognizeContract({
   env,
   user,
   images,
+  model,
 }: RecognizeOptions): Promise<ContractRecognizeResult> {
   if (!images || images.length === 0) {
     throw new Error('请至少上传一张合同图片');
   }
 
   const customKey = user.ai_api_key?.trim();
+  // Selected model: preference order = single request param > user settings > default top cost-performance model
+  const selectedModel = model?.trim() || user.ai_model?.trim() || '@cf/meta/llama-3.2-11b-vision-instruct';
 
-  // 1. If user explicitly provided a private custom API key in settings, use it
-  if (customKey) {
+  // 1. If requested model is a Cloudflare model OR no custom external key is set, use Cloudflare Workers AI
+  const isCfModel = selectedModel.startsWith('@cf/') || !customKey;
+
+  if (isCfModel && env.AI) {
+    try {
+      const cfModelId = selectedModel.startsWith('@cf/') ? selectedModel : '@cf/meta/llama-3.2-11b-vision-instruct';
+      const imageBytes = base64ToByteArray(images[0]);
+      const cfAiRes = await env.AI.run(cfModelId as any, {
+        prompt: `${SYSTEM_PROMPT}\n\n请仔细审阅图片中的合同内容并提取关键信息，输出合法的 JSON 格式。`,
+        image: imageBytes,
+        max_tokens: 1024,
+      });
+
+      const responseText = (cfAiRes as any)?.response || '';
+      if (responseText) {
+        const parsed = parseContractRecognitionJson(responseText);
+        return {
+          ...parsed,
+          model_used: cfModelId,
+          is_mock: false,
+        };
+      }
+    } catch (cfAiError: any) {
+      console.warn(`[Cloudflare Workers AI (${selectedModel}) execution note]`, cfAiError?.message || cfAiError);
+      // Miniflare in pure local dev mode without --remote cannot run remote GPU models locally
+    }
+  }
+
+  // 2. If user explicitly provided a private custom API key for non-CF models (e.g. OpenAI/Gemini)
+  if (customKey && !selectedModel.startsWith('@cf/')) {
     const baseUrl = (user.ai_base_url?.trim() || 'https://api.openai.com/v1').replace(/\/+$/, '');
-    const model = user.ai_model?.trim() || 'gpt-4o-mini';
 
     const messagesContent: any[] = [
       {
@@ -80,7 +108,7 @@ export async function recognizeContract({
         Authorization: `Bearer ${customKey}`,
       },
       body: JSON.stringify({
-        model,
+        model: selectedModel,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: messagesContent },
@@ -92,7 +120,7 @@ export async function recognizeContract({
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => '');
-      throw new Error(`自定义 AI 接口响应错误 (${response.status}): ${errorText.slice(0, 200)}`);
+      throw new Error(`外部 AI 接口响应错误 (${response.status}): ${errorText.slice(0, 200)}`);
     }
 
     const data: any = await response.json();
@@ -100,32 +128,9 @@ export async function recognizeContract({
     const parsed = parseContractRecognitionJson(rawText);
     return {
       ...parsed,
+      model_used: selectedModel,
       is_mock: false,
     };
-  }
-
-  // 2. Primary / Default Engine: Cloudflare Native Workers AI
-  if (env.AI) {
-    try {
-      const imageBytes = base64ToByteArray(images[0]);
-      const cfAiRes = await env.AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
-        prompt: `${SYSTEM_PROMPT}\n\n请仔细审阅图片中的合同内容并提取关键信息，输出合法的 JSON 格式。`,
-        image: imageBytes,
-        max_tokens: 1024,
-      });
-
-      const responseText = (cfAiRes as any)?.response || '';
-      if (responseText) {
-        const parsed = parseContractRecognitionJson(responseText);
-        return {
-          ...parsed,
-          is_mock: false,
-        };
-      }
-    } catch (cfAiError: any) {
-      console.warn('[Cloudflare Workers AI execution note]', cfAiError?.message || cfAiError);
-      // Miniflare in pure local mode without --remote cannot run remote GPU models locally
-    }
   }
 
   // 3. Fallback: Global AI_API_KEY if configured in wrangler vars/secrets
@@ -133,7 +138,7 @@ export async function recognizeContract({
   if (envKey) {
     try {
       const baseUrl = ((env as any).AI_BASE_URL?.trim() || 'https://api.openai.com/v1').replace(/\/+$/, '');
-      const model = (env as any).AI_MODEL?.trim() || 'gpt-4o-mini';
+      const externalModel = (env as any).AI_MODEL?.trim() || 'gpt-4o-mini';
 
       const messagesContent: any[] = [
         {
@@ -158,7 +163,7 @@ export async function recognizeContract({
           Authorization: `Bearer ${envKey}`,
         },
         body: JSON.stringify({
-          model,
+          model: externalModel,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
             { role: 'user', content: messagesContent },
@@ -174,6 +179,7 @@ export async function recognizeContract({
         const parsed = parseContractRecognitionJson(rawText);
         return {
           ...parsed,
+          model_used: externalModel,
           is_mock: false,
         };
       }
@@ -183,7 +189,6 @@ export async function recognizeContract({
   }
 
   // 4. Offline / Local Dev Demo Fallback
-  // Ensures automated CI/smoke test and local developer onboarding work smoothly without cloud GPU dependency
   const today = new Date();
   const nextYear = new Date(today);
   nextYear.setFullYear(today.getFullYear() + 1);
@@ -198,8 +203,9 @@ export async function recognizeContract({
     end_date: formatD(nextYear),
     amount: 158000,
     note: '付款节点：合同签订后付30%，初验通过付50%，质保期满1年后结清20%尾款。到期前30日需确认续签意向。',
-    summary: '【Workers AI 本地模拟】本地开发未连 Cloudflare 远端 GPU 时自动展示示例数据。线上环境自动调用原生 Cloudflare Workers AI。',
+    summary: '【Workers AI 演示模式】已自动填充示例数据。线上环境自动调用您选择的 Cloudflare Workers AI 原生模型。',
     confidence: 'high',
+    model_used: selectedModel,
     is_mock: true,
   };
 }

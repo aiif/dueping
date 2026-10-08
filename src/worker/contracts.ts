@@ -20,6 +20,7 @@ contractsApp.post('/recognize', async (c) => {
 
   const body = await c.req.json().catch(() => ({}));
   const images = Array.isArray(body?.images) ? body.images : [];
+  const model = typeof body?.model === 'string' ? body.model : undefined;
   if (images.length === 0) {
     return c.json({ error: '请上传至少一张合同图片' }, 400);
   }
@@ -29,6 +30,7 @@ contractsApp.post('/recognize', async (c) => {
       env: c.env,
       user,
       images,
+      model,
     });
     return c.json({ success: true, result });
   } catch (err: any) {

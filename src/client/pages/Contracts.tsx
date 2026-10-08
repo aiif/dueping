@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { api, ApiError } from '../api';
-import { Contract, ContractStatus, User, ContractRecognizeResult } from '../../shared/types';
+import { Contract, ContractStatus, User, ContractRecognizeResult, CF_AI_VISION_MODELS } from '../../shared/types';
 import { calculateDaysLeft, formatContractStatus } from '../../shared/logic';
 
 interface ContractsProps {
@@ -78,6 +78,10 @@ export const Contracts: React.FC<ContractsProps> = ({ user }) => {
 
   // AI Recognition State
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>(
+    user.ai_model || CF_AI_VISION_MODELS[0].id
+  );
+  const [usedModelTag, setUsedModelTag] = useState<string | null>(null);
   const [isRecognizing, setIsRecognizing] = useState(false);
   const [recognitionMsg, setRecognitionMsg] = useState<string | null>(null);
   const [isMockRecognize, setIsMockRecognize] = useState(false);
@@ -209,9 +213,11 @@ export const Contracts: React.FC<ContractsProps> = ({ user }) => {
     try {
       const res = await api.post<{ success: boolean; result: ContractRecognizeResult }>('/api/contracts/recognize', {
         images: imagesToRecognize,
+        model: selectedModel,
       });
 
       const r = res.result;
+      setUsedModelTag(r.model_used || selectedModel);
       const filledSet = new Set<string>();
 
       if (r.name) {
@@ -692,6 +698,28 @@ export const Contracts: React.FC<ContractsProps> = ({ user }) => {
                     </div>
                   )}
 
+                  {/* Model selector (Ordered by cost-performance) */}
+                  <div className="mt-3 pt-2.5 border-t border-indigo-100/60 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                    <div className="flex items-center space-x-1.5 text-xs text-indigo-900 font-medium shrink-0">
+                      <span>🤖</span>
+                      <span>Cloudflare AI 视觉模型 (按性价比排序):</span>
+                    </div>
+                    <select
+                      value={selectedModel}
+                      onChange={(e) => setSelectedModel(e.target.value)}
+                      className="text-xs bg-white border border-indigo-200 text-gray-800 rounded-lg px-2.5 py-1 focus:ring-1 focus:ring-indigo-500 focus:outline-hidden font-medium"
+                    >
+                      {CF_AI_VISION_MODELS.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          #{m.costRank} {m.name} [{m.badge}] - {m.pricingDesc}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="mt-1 text-[11px] text-indigo-600/80">
+                    💡 {CF_AI_VISION_MODELS.find((m) => m.id === selectedModel)?.features || '精选 Cloudflare Workers AI 官方视觉多模态大模型'}
+                  </div>
+
                   {/* Recognition loading / progress */}
                   {isRecognizing && (
                     <div className="mt-3 p-2.5 bg-indigo-50 text-indigo-700 text-xs rounded-lg flex items-center space-x-2 border border-indigo-100">
@@ -708,6 +736,11 @@ export const Contracts: React.FC<ContractsProps> = ({ user }) => {
                       <div className="flex items-center space-x-1.5 font-semibold">
                         <span>✨</span>
                         <span>AI 识别成功并自动填入表单</span>
+                        {usedModelTag && (
+                          <span className="ml-auto font-mono text-[10px] bg-green-100 text-green-800 px-1.5 py-0.5 rounded border border-green-200 font-normal">
+                            已用模型: {usedModelTag.replace('@cf/', '')}
+                          </span>
+                        )}
                       </div>
                       <div className="mt-0.5 text-green-700 text-[11px]">{recognitionMsg}</div>
                       {isMockRecognize && (

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api, ApiError } from '../api';
-import { User, SettingsResponse } from '../../shared/types';
+import { User, SettingsResponse, CF_AI_VISION_MODELS } from '../../shared/types';
 import { validateSettings, getLocalTimeInfo } from '../../shared/logic';
 
 interface SettingsProps {
@@ -383,15 +383,63 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
 
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">
-                  视觉模型名称 (Model)
+                  Cloudflare 原生视觉模型（按性价比从高到低排列）
                 </label>
-                <input
-                  type="text"
-                  value={aiModelInput}
-                  onChange={(e) => setAiModelInput(e.target.value)}
-                  placeholder="留空则使用默认 (gpt-4o-mini)"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <select
+                  value={
+                    CF_AI_VISION_MODELS.some((m) => m.id === aiModelInput)
+                      ? aiModelInput
+                      : aiModelInput
+                      ? 'custom'
+                      : CF_AI_VISION_MODELS[0].id
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'custom') {
+                      setAiModelInput(aiModelInput.startsWith('@cf/') ? '' : aiModelInput);
+                    } else {
+                      setAiModelInput(val);
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white font-medium"
+                >
+                  {CF_AI_VISION_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      #{m.costRank} {m.name} [{m.badge}] - {m.pricingDesc}
+                    </option>
+                  ))}
+                  <option value="custom">其他自定义外部模型 (如 gpt-4o-mini 等)...</option>
+                </select>
+
+                {/* Custom model input if user wants to use non-CF model */}
+                {(!CF_AI_VISION_MODELS.some((m) => m.id === aiModelInput) && aiModelInput !== '') && (
+                  <div className="mt-2">
+                    <input
+                      type="text"
+                      value={aiModelInput}
+                      onChange={(e) => setAiModelInput(e.target.value)}
+                      placeholder="输入自定义模型名称，例如 gpt-4o-mini 或 qwen-vl-plus"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"
+                    />
+                  </div>
+                )}
+
+                {/* Model features note */}
+                <div className="mt-1.5 text-xs text-indigo-700 bg-indigo-50/70 p-2 rounded-lg border border-indigo-100">
+                  {(() => {
+                    const currentModelId = aiModelInput || CF_AI_VISION_MODELS[0].id;
+                    const matched = CF_AI_VISION_MODELS.find((m) => m.id === currentModelId);
+                    if (matched) {
+                      return (
+                        <>
+                          <span className="font-semibold text-indigo-900">{matched.badge}：</span>
+                          {matched.features}（{matched.pricingDesc}）
+                        </>
+                      );
+                    }
+                    return '当前使用您指定的自定义外部模型。';
+                  })()}
+                </div>
               </div>
             </div>
           </div>

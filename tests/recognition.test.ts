@@ -6,7 +6,7 @@ import {
   validateSettings,
 } from '../src/shared/logic';
 import { recognizeContract } from '../src/worker/recognition';
-import { User } from '../src/shared/types';
+import { User, CF_AI_VISION_MODELS } from '../src/shared/types';
 
 describe('10. 合同 AI 识别逻辑与数据规范化', () => {
   it('正确解析标准的 JSON 识别输出', () => {
@@ -167,6 +167,54 @@ describe('10. 合同 AI 识别逻辑与数据规范化', () => {
     expect(res.end_date).toBe('2027-04-30');
     expect(res.amount).toBe(88000);
     expect(res.is_mock).toBe(false);
+  });
+
+  it('Cloudflare Workers AI 视觉模型列表按性价比从高到低严格排序', () => {
+    expect(CF_AI_VISION_MODELS.length).toBeGreaterThanOrEqual(3);
+    for (let i = 0; i < CF_AI_VISION_MODELS.length - 1; i++) {
+      expect(CF_AI_VISION_MODELS[i].costRank).toBeLessThan(CF_AI_VISION_MODELS[i + 1].costRank);
+    }
+    // 性价比第一名必须为默认的 Llama 3.2 11B Vision
+    expect(CF_AI_VISION_MODELS[0].id).toBe('@cf/meta/llama-3.2-11b-vision-instruct');
+    expect(CF_AI_VISION_MODELS[0].badge).toContain('性价比');
+  });
+
+  it('用户可指定选择特定的 Cloudflare AI 视觉模型', async () => {
+    let calledModel = '';
+    const mockEnv = {
+      AI: {
+        run: async (model: string) => {
+          calledModel = model;
+          return {
+            response: JSON.stringify({
+              name: '测试特定模型合同',
+              client: '测试甲方',
+              end_date: '2027-01-01',
+            }),
+          };
+        },
+      },
+    };
+
+    const fakeUser: User = {
+      id: 'u1',
+      email: 'test@example.com',
+      reminder_days: [30, 15, 7],
+      send_hour: 9,
+      timezone: 'Asia/Shanghai',
+      created_at: new Date().toISOString(),
+    };
+
+    const res = await recognizeContract({
+      env: mockEnv as any,
+      user: fakeUser,
+      images: ['data:image/jpeg;base64,ZmFrZQ=='],
+      model: '@cf/moondream/moondream3-1.9b-a2b',
+    });
+
+    expect(calledModel).toBe('@cf/moondream/moondream3-1.9b-a2b');
+    expect(res.model_used).toBe('@cf/moondream/moondream3-1.9b-a2b');
+    expect(res.name).toBe('测试特定模型合同');
   });
 
   it('设置校验支持保存自定义 AI 配置字段', () => {

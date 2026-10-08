@@ -96,6 +96,55 @@ export interface SettingsResponse {
   settings: UserSettings;
 }
 
+export interface CfAiModelOption {
+  id: string;
+  name: string;
+  badge: string;
+  costRank: number; // 性价比排名: 1 为最高
+  pricingDesc: string;
+  features: string;
+  isDefault?: boolean;
+}
+
+/**
+ * Cloudflare Workers AI 视觉模型列表，按性价比从高到低排列
+ */
+export const CF_AI_VISION_MODELS: CfAiModelOption[] = [
+  {
+    id: '@cf/meta/llama-3.2-11b-vision-instruct',
+    name: 'Llama 3.2 11B Vision (推荐)',
+    badge: '性价比之王',
+    costRank: 1,
+    pricingDesc: '输入 $0.049 / 1M tokens',
+    features: '极低成本，11B 高精度参数，128k 上下文，合同识别综合效果最佳',
+    isDefault: true,
+  },
+  {
+    id: '@cf/moondream/moondream3-1.9b-a2b',
+    name: 'Moondream 3.1 (1.9B)',
+    badge: '轻量均衡',
+    costRank: 2,
+    pricingDesc: '微型视觉模型，极低神经元消耗',
+    features: '专精视觉图文解析，响应极快，消耗轻巧',
+  },
+  {
+    id: '@cf/meta/llama-4-scout-17b-16e-instruct',
+    name: 'Llama 4 Scout 17B',
+    badge: '高精度旗舰',
+    costRank: 3,
+    pricingDesc: '输入 $0.27 / 1M tokens',
+    features: 'Meta 新一代高精度多模态，复杂长条款与模糊印章推理能力极强',
+  },
+  {
+    id: '@cf/unum/uform-gen2-qwen-500m',
+    name: 'UForm Gen2 Qwen 500M',
+    badge: '超极速省流',
+    costRank: 4,
+    pricingDesc: '超低能耗，极致极速',
+    features: '500M 极简视觉参数，毫秒级低延迟快速响应',
+  },
+];
+
 export interface ContractRecognizeResult {
   name?: string;
   client?: string;
@@ -106,9 +155,12 @@ export interface ContractRecognizeResult {
   confidence?: 'high' | 'medium' | 'low';
   summary?: string;
   is_mock?: boolean;
+  model_used?: string;
 }
 
 export interface ContractRecognizeRequest {
   images: string[];
+  model?: string;
   prompt?: string;
 }
+

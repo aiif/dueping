@@ -89,7 +89,6 @@ export const App: React.FC = () => {
       <footer className="border-t border-gray-200 py-6 text-center text-xs text-gray-400">
         <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>dueping &copy; {new Date().getFullYear()} — 超轻量合同到期提醒应用</span>
-          <span>运行于 Cloudflare Workers + D1</span>
         </div>
       </footer>
     </div>

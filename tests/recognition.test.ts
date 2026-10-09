@@ -74,7 +74,67 @@ describe('10. 合同 AI 识别逻辑与数据规范化', () => {
     expect(normalizeAmount('待定')).toBeNull();
   });
 
-  it('畸形响应容错：当 AI 返回非 JSON 文本时，平稳降级不崩溃', () => {
+  it('容错解析大模型直接返回的 JavaScript 对象结构', () => {
+    const rawObj = {
+      name: '房屋租赁协议',
+      client: '张三',
+      start_date: '2026-01-01',
+      end_date: '2026-12-31',
+      amount: '60000',
+      note: '押一付三，月租金5000元',
+      summary: '张三租赁房屋，租期一年',
+    };
+    const res = parseContractRecognitionJson(rawObj);
+    expect(res.name).toBe('房屋租赁协议');
+    expect(res.client).toBe('张三');
+    expect(res.start_date).toBe('2026-01-01');
+    expect(res.end_date).toBe('2026-12-31');
+    expect(res.amount).toBe(60000);
+    expect(res.confidence).toBe('high');
+  });
+
+  it('容错解析大模型返回的英文 Markdown 键值列表输出', () => {
+    const raw = `Sure, I can help you with that. Based on the image, I can provide the following information:
+
+**Contract Information**
+
+* **Name:** Shanghai Information Technology Co., Ltd. Technology Cooperation Agreement
+* **Client:** Shanghai Information Technology Co., Ltd.
+* **Start Date:** 2026-01-01
+* **End Date:** 2026-12-31
+* **Amount:** 88000
+* **Note:** The contract includes payment terms and notice periods.
+* **Summary:** This agreement outlines the cooperation between two parties.`;
+
+    const res = parseContractRecognitionJson(raw);
+    expect(res.name).toBe('Shanghai Information Technology Co., Ltd. Technology Cooperation Agreement');
+    expect(res.client).toBe('Shanghai Information Technology Co., Ltd.');
+    expect(res.start_date).toBe('2026-01-01');
+    expect(res.end_date).toBe('2026-12-31');
+    expect(res.amount).toBe(88000);
+    expect(res.confidence).toBe('high');
+  });
+
+  it('容错解析带有末尾逗号和未转义换行的脏 JSON', () => {
+    const dirty = `{
+      "name": "技术开发合作协议",
+      "client": "北京科技有限公司",
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "amount": 88000,
+      "note": "第一期 付款30%
+第二期 验收付70%",
+    }`;
+    const res = parseContractRecognitionJson(dirty);
+    expect(res.name).toBe('技术开发合作协议');
+    expect(res.client).toBe('北京科技有限公司');
+    expect(res.start_date).toBe('2026-01-01');
+    expect(res.end_date).toBe('2026-12-31');
+    expect(res.amount).toBe(88000);
+    expect(res.confidence).toBe('high');
+  });
+
+  it('畸形响应容错：当 AI 返回非合同无意义文本时，平稳降级不崩溃', () => {
     const raw = '抱歉，图片太模糊，无法看清合同文字。';
     const res = parseContractRecognitionJson(raw);
     expect(res.confidence).toBe('low');

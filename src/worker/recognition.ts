@@ -2,16 +2,22 @@ import { ContractRecognizeResult, User } from '../shared/types';
 import { parseContractRecognitionJson } from '../shared/logic';
 
 const SYSTEM_PROMPT = `你是一个专业的合同审计与信息抽取专家。用户会提供一份合同的图片（可能包含多页）或合同文本内容。
-请仔细阅读提供的内容，提取以下合同核心字段并严格以 JSON 格式输出：
-1. "name": 合同全称（例如："企业级技术咨询服务合同"、"2026年度房屋租赁协议"）
-2. "client": 甲方名称（即委托方/承租方/采购方/客户公司或个人的法定全称）
-3. "start_date": 合同生效/起始日期（格式必须为 YYYY-MM-DD，若内容中未体现请填 null）
-4. "end_date": 合同到期/终止日期（格式必须为 YYYY-MM-DD。若合同写为"自生效日起一年"等相对期限，请结合起始日推算；若无法确定具体年份按当前时间或合同签署年推算）
-5. "amount": 合同总金额（纯数字，单位元人民币，例如 50000。若无明确固定总额填 null）
-6. "note": 关键备注信息（提取核心付款阶段、违约条款、续签通知期、联系人等，200字以内，若无填 null）
-7. "summary": 合同主要内容总结（1-2句话概括）
+请仔细阅读提供的内容，提取合同核心字段并严格以 JSON 格式输出。
+输出 JSON 格式模板如下：
+{
+  "name": "合同全称（例如：企业级技术咨询服务合同、2026年度房屋租赁协议）",
+  "client": "甲方名称（即委托方/承租方/采购方/客户公司或个人的法定全称）",
+  "start_date": "合同生效/起始日期（格式必须为 YYYY-MM-DD，若无法确定填 null）",
+  "end_date": "合同到期/终止日期（格式必须为 YYYY-MM-DD。若合同写为相对期限请结合起始日推算）",
+  "amount": 50000,
+  "note": "关键付款阶段、违约条款、续签通知期、联系人等，200字以内，若无填 null",
+  "summary": "合同主要内容总结（1-2句话概括）"
+}
 
-只返回有效的 JSON 格式对象，不要包含其他无关内容。`;
+重要输出规则：
+1. 必须直接返回合法的 JSON 对象（以 { 开头，以 } 结尾）。
+2. 严禁输出任何问候语、说明文字或非 JSON 格式内容。
+3. 金额为纯数字（单位元人民币），无需包含符号或单位。`;
 
 interface RecognizeOptions {
   env: Env;
@@ -103,7 +109,7 @@ export async function recognizeContract({
   if (isCfModel && env.AI) {
     try {
       const cfModelId = selectedModel.startsWith('@cf/') ? selectedModel : '@cf/meta/llama-3.2-11b-vision-instruct';
-      let responseText = '';
+      let aiRawResponse: unknown = null;
 
       if (cleanText) {
         // Text recognition mode via Workers AI
@@ -111,18 +117,18 @@ export async function recognizeContract({
           const res = await callCloudflareAiWithLicenseAgreement(env, cfModelId, {
             messages: [
               { role: 'system', content: SYSTEM_PROMPT },
-              { role: 'user', content: `合同文本内容如下：\n\n${cleanText}\n\n请提取合同核心字段并严格以 JSON 格式输出。` },
+              { role: 'user', content: `合同文本内容如下：\n\n${cleanText}\n\n请直接提取合同字段并严格按指定模板输出 JSON 对象：` },
             ],
             max_tokens: 1500,
           });
-          responseText = (res as any)?.response || (res as any)?.content || '';
+          aiRawResponse = (res as any)?.response ?? (res as any)?.content ?? res;
         } catch (msgErr: any) {
           console.warn(`[Cloudflare Workers AI] text messages mode note for ${cfModelId}:`, msgErr?.message || msgErr);
           const res = await callCloudflareAiWithLicenseAgreement(env, cfModelId, {
-            prompt: `${SYSTEM_PROMPT}\n\n合同文本内容如下：\n\n${cleanText}\n\n请提取合同核心字段并严格以 JSON 格式输出。`,
+            prompt: `${SYSTEM_PROMPT}\n\n合同文本内容如下：\n\n${cleanText}\n\n请直接提取合同字段并严格按指定模板输出 JSON 对象：`,
             max_tokens: 1500,
           });
-          responseText = (res as any)?.response || (res as any)?.description || '';
+          aiRawResponse = (res as any)?.response ?? (res as any)?.description ?? res;
         }
       } else if (images && images.length > 0) {
         // Image recognition mode via Workers AI
@@ -137,22 +143,22 @@ export async function recognizeContract({
             reasoning: false,
             max_tokens: 1500,
           });
-          responseText = (res as any)?.answer || (res as any)?.response || '';
+          aiRawResponse = (res as any)?.answer ?? (res as any)?.response ?? res;
         } else if (cfModelId.includes('llava')) {
           // LLaVA 1.5 7B: prompt + image byte array
           const imageBytes = base64ToByteArray(images[0]);
           const res = await callCloudflareAiWithLicenseAgreement(env, cfModelId, {
-            prompt: `${SYSTEM_PROMPT}\n\n请提取合同关键信息并输出合法 JSON。`,
+            prompt: `${SYSTEM_PROMPT}\n\n请提取合同关键信息并输出合法 JSON 对象。`,
             image: imageBytes,
             max_tokens: 1500,
           });
-          responseText = (res as any)?.description || (res as any)?.response || '';
+          aiRawResponse = (res as any)?.description ?? (res as any)?.response ?? res;
         } else {
           // Llama 3.2 11B Vision / Llama 4 Scout: Modern multi-image multimodal messages format
           const userContent: any[] = [
             {
               type: 'text',
-              text: `你是一个专业的合同审计与信息抽取专家。用户提供了该合同的 ${images.length} 张图片（按合同顺序排列，可能包含封面、条款细则、起止日期、金额与签署页等）。\n请综合审阅所有图片中的完整信息，提取合同核心字段并严格以 JSON 格式输出：\n${SYSTEM_PROMPT}`,
+              text: `用户上传了该合同的 ${images.length} 张图片（包含封面、条款细则、起止日期、金额与签署页）。请综合审阅所有图片内容，提取合同字段并严格按指定模板直接输出 JSON 对象：`,
             },
           ];
 
@@ -172,23 +178,23 @@ export async function recognizeContract({
               ],
               max_tokens: 1500,
             });
-            responseText = (res as any)?.response || (res as any)?.content || '';
+            aiRawResponse = (res as any)?.response ?? (res as any)?.content ?? res;
           } catch (msgErr: any) {
             console.warn(`[Cloudflare Workers AI] messages mode note for ${cfModelId}:`, msgErr?.message || msgErr);
             // Fallback to prompt + image byte array if messages format is not accepted
             const imageBytes = base64ToByteArray(images[0]);
             const res = await callCloudflareAiWithLicenseAgreement(env, cfModelId, {
-              prompt: `${SYSTEM_PROMPT}\n\n请仔细审阅图片中的合同内容并提取关键信息，输出合法的 JSON 格式。`,
+              prompt: `${SYSTEM_PROMPT}\n\n请仔细审阅图片中的合同内容并提取关键信息，输出合法的 JSON 格式对象。`,
               image: imageBytes,
               max_tokens: 1500,
             });
-            responseText = (res as any)?.response || '';
+            aiRawResponse = (res as any)?.response ?? res;
           }
         }
       }
 
-      if (responseText) {
-        const parsed = parseContractRecognitionJson(responseText);
+      if (aiRawResponse !== undefined && aiRawResponse !== null && aiRawResponse !== '') {
+        const parsed = parseContractRecognitionJson(aiRawResponse);
         return {
           ...parsed,
           model_used: cfModelId,

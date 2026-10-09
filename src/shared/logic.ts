@@ -657,30 +657,113 @@ export function normalizeAmount(amountVal: unknown): number | null {
 }
 
 /**
- * Parses and cleans contract recognition JSON response from an LLM.
- * Handles markdown code fences, plain json, and dirty formatting.
+ * Parses and cleans contract recognition JSON or text response from an LLM.
+ * Handles JavaScript objects, markdown code fences, dirty/truncated JSON,
+ * trailing commas, unescaped newlines, and markdown bullet point key-values.
  */
-export function parseContractRecognitionJson(rawText: string): ContractRecognizeResult {
-  if (!rawText || typeof rawText !== 'string') {
+export function parseContractRecognitionJson(rawInput: unknown): ContractRecognizeResult {
+  if (!rawInput) {
     return { confidence: 'low', summary: '未收到有效的模型返回内容' };
   }
 
-  let jsonStr = rawText.trim();
-  const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  if (codeBlockMatch) {
-    jsonStr = codeBlockMatch[1].trim();
-  } else {
-    const firstBrace = jsonStr.indexOf('{');
-    const lastBrace = jsonStr.lastIndexOf('}');
-    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-      jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
+  let parsed: any = null;
+
+  // 1. If already an object (e.g. Cloudflare Workers AI auto-parsed JSON response)
+  if (typeof rawInput === 'object' && rawInput !== null && !Array.isArray(rawInput)) {
+    parsed = rawInput;
+  } else if (typeof rawInput === 'string') {
+    const rawText = rawInput.trim();
+    if (!rawText) {
+      return { confidence: 'low', summary: '未收到有效的模型返回内容' };
+    }
+
+    // Try extracting from markdown code block ```json ... ```
+    const codeBlockMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    let candidate = codeBlockMatch ? codeBlockMatch[1].trim() : rawText;
+
+    // Find outermost braces
+    const firstBrace = candidate.indexOf('{');
+    const lastBrace = candidate.lastIndexOf('}');
+    if (firstBrace !== -1) {
+      if (lastBrace > firstBrace) {
+        candidate = candidate.slice(firstBrace, lastBrace + 1);
+      } else {
+        // Truncated JSON missing closing brace
+        candidate = candidate.slice(firstBrace) + '\n}';
+      }
+    }
+
+    // 2. Direct JSON.parse
+    try {
+      parsed = JSON.parse(candidate);
+    } catch {
+      // 3. Clean dirty JSON: comments, trailing commas, unescaped newlines in strings
+      try {
+        let sanitized = candidate
+          .replace(/\/\/[^\n\r]*/g, '')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/,\s*([}\]])/g, '$1');
+
+        // Escape raw unescaped newlines inside double-quoted string literals
+        sanitized = sanitized.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/g, (match) => {
+          return match.replace(/\r?\n/g, '\\n');
+        });
+
+        parsed = JSON.parse(sanitized);
+      } catch {
+        // 4. Fallback: Parse key-value pairs from Markdown bullet points or natural language
+        const fields: Record<string, string> = {};
+        const lines = rawText.split('\n');
+
+        const patterns: Record<string, RegExp[]> = {
+          name: [
+            /(?:合同名称|合同全称|协议名称|name|contract\s*name)\s*[*：:\s]+\s*([^\n*]+)/i,
+          ],
+          client: [
+            /(?:甲方(?:名称)?|委托方|采购方|承租方|客户(?:公司)?|买受人|client|party\s*a)\s*[*：:\s]+\s*([^\n*]+)/i,
+          ],
+          start_date: [
+            /(?:生效日期|起始日期|合同生效日|开始日期|start\s*date|effective\s*date)\s*[*：:\s]+\s*([^\n*]+)/i,
+          ],
+          end_date: [
+            /(?:到期日期|截止日期|终止日期|合同到期日|结束日期|end\s*date|expiry\s*date|expiration\s*date)\s*[*：:\s]+\s*([^\n*]+)/i,
+          ],
+          amount: [
+            /(?:合同总额|总金额|合同金额|总价款|总价|金额|amount|total\s*amount)\s*[*：:\s]+\s*([^\n*]+)/i,
+          ],
+          note: [
+            /(?:关键备注|备注信息|备注|付款条款|条款|note|remarks)\s*[*：:\s]+\s*([^\n*]+)/i,
+          ],
+          summary: [
+            /(?:合同主要内容总结|内容总结|主要内容|总结|summary|overview)\s*[*：:\s]+\s*([^\n*]+)/i,
+          ],
+        };
+
+        for (const line of lines) {
+          const l = line.trim().replace(/^[\*\-\#•\d\.\s]+/, '').trim();
+          for (const [key, regexList] of Object.entries(patterns)) {
+            if (fields[key]) continue;
+            for (const reg of regexList) {
+              const m = l.match(reg);
+              if (m && m[1]) {
+                const val = m[1].replace(/^[*\s:"'\u201c\u201d\u2018\u2019]+|[*\s:"'\u201c\u201d\u2018\u2019]+$/g, '').trim();
+                if (val && !/^(null|none|无|未提及|未明确|暂无)$/i.test(val)) {
+                  fields[key] = val;
+                }
+                break;
+              }
+            }
+          }
+        }
+
+        if (fields.name || fields.client || fields.end_date || fields.amount) {
+          parsed = fields;
+        }
+      }
     }
   }
 
-  let parsed: any = {};
-  try {
-    parsed = JSON.parse(jsonStr);
-  } catch {
+  if (!parsed || typeof parsed !== 'object') {
     return {
       confidence: 'low',
       summary: '识别结果格式解析失败，请核对并手动填写',

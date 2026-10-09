@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { api, ApiError } from '../api';
-import { Contract, ContractStatus, User, ContractRecognizeResult, CF_AI_VISION_MODELS } from '../../shared/types';
+import { Contract, ContractStatus, User, ContractRecognizeResult, CF_AI_VISION_MODELS, CF_AI_TEXT_MODELS } from '../../shared/types';
 import { calculateDaysLeft, formatContractStatus } from '../../shared/logic';
 
 interface ContractsProps {
@@ -216,7 +216,10 @@ export const Contracts: React.FC<ContractsProps> = ({ user }) => {
     setModalError(null);
     setRecognitionMsg(null);
 
-    const targetModel = user.ai_model || CF_AI_VISION_MODELS[0].id;
+    const targetModel =
+      mode === 'text'
+        ? (user.ai_text_model || CF_AI_TEXT_MODELS[0].id)
+        : (user.ai_model || CF_AI_VISION_MODELS[0].id);
     const payload: any = {
       model: targetModel,
     };
@@ -719,12 +722,15 @@ export const Contracts: React.FC<ContractsProps> = ({ user }) => {
                     </div>
 
                     {contractTextInput.trim() && (
-                      <div className="flex justify-end">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-gray-500 truncate" title={user.ai_text_model || CF_AI_TEXT_MODELS[0].id}>
+                          📝 文本模型: <span className="font-mono text-gray-700 font-medium">{(user.ai_text_model || CF_AI_TEXT_MODELS[0].id).replace('@cf/', '')}</span>
+                        </span>
                         <button
                           type="button"
                           onClick={() => triggerAiRecognition('text')}
                           disabled={isRecognizing}
-                          className="py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium shadow-2xs transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                          className="shrink-0 py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium shadow-2xs transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                         >
                           {isRecognizing ? (
                             <>
@@ -800,6 +806,13 @@ export const Contracts: React.FC<ContractsProps> = ({ user }) => {
                               <span>加选</span>
                             </button>
                           )}
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px] text-gray-500 px-0.5">
+                          <span className="truncate" title={user.ai_model || CF_AI_VISION_MODELS[0].id}>
+                            📸 视觉模型: <span className="font-mono text-gray-700 font-medium">{(user.ai_model || CF_AI_VISION_MODELS[0].id).replace('@cf/', '')}</span>
+                          </span>
+                          <span className="shrink-0">已选 {uploadedImages.length} 页</span>
                         </div>
 
                         <button

@@ -1,4 +1,4 @@
-import { ContractRecognizeResult, User } from '../shared/types';
+import { ContractRecognizeResult, User, CF_AI_VISION_MODELS, CF_AI_TEXT_MODELS } from '../shared/types';
 import { parseContractRecognitionJson } from '../shared/logic';
 
 const SYSTEM_PROMPT = `你是一个专业的合同审计与信息抽取专家。用户会提供一份合同的图片（可能包含多页）或合同文本内容。
@@ -99,8 +99,12 @@ export async function recognizeContract({
   }
 
   const customKey = user.ai_api_key?.trim();
-  // Selected model: preference order = single request param > user settings > default top cost-performance model
-  const rawModel = model?.trim() || user.ai_model?.trim() || '@cf/meta/llama-3.2-11b-vision-instruct';
+  // Selected model: preference order = single request param > user mode settings > default recommended model
+  const defaultRecommendedModel = cleanText ? CF_AI_TEXT_MODELS[0].id : CF_AI_VISION_MODELS[0].id;
+  const rawModel =
+    model?.trim() ||
+    (cleanText ? user.ai_text_model?.trim() : user.ai_model?.trim()) ||
+    defaultRecommendedModel;
   const selectedModel = resolveCfModelId(rawModel);
 
   // 1. Primary Engine: Cloudflare Workers AI (Default & Free native integration)
@@ -108,7 +112,7 @@ export async function recognizeContract({
 
   if (isCfModel && env.AI) {
     try {
-      const cfModelId = selectedModel.startsWith('@cf/') ? selectedModel : '@cf/meta/llama-3.2-11b-vision-instruct';
+      const cfModelId = selectedModel.startsWith('@cf/') ? selectedModel : defaultRecommendedModel;
       let aiRawResponse: unknown = null;
 
       if (cleanText) {

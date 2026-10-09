@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api, ApiError } from '../api';
-import { User, SettingsResponse, CF_AI_VISION_MODELS } from '../../shared/types';
+import { User, SettingsResponse, CF_AI_VISION_MODELS, CF_AI_TEXT_MODELS } from '../../shared/types';
 import { validateSettings, getLocalTimeInfo } from '../../shared/logic';
 
 interface SettingsProps {
@@ -35,7 +35,8 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
 
   // AI Configuration State
   const [aiTab, setAiTab] = useState<'cf' | 'custom'>('cf'); // 默认显示 cf 原生配置
-  const [cfModel, setCfModel] = useState<string>(CF_AI_VISION_MODELS[0].id);
+  const [cfVisionModel, setCfVisionModel] = useState<string>(user.ai_model || CF_AI_VISION_MODELS[0].id);
+  const [cfTextModel, setCfTextModel] = useState<string>(user.ai_text_model || CF_AI_TEXT_MODELS[0].id);
   const [customModel, setCustomModel] = useState<string>('');
   const [aiApiKeyInput, setAiApiKeyInput] = useState('');
   const [aiBaseUrlInput, setAiBaseUrlInput] = useState('');
@@ -63,7 +64,7 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
         if (data.ai_base_url) setAiBaseUrlInput(data.ai_base_url);
         if (data.ai_model) {
           if (data.ai_model.startsWith('@cf/')) {
-            setCfModel(data.ai_model);
+            setCfVisionModel(data.ai_model);
             setAiTab('cf');
           } else {
             setCustomModel(data.ai_model);
@@ -71,6 +72,9 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
           }
         } else if (data.ai_api_key_configured) {
           setAiTab('custom');
+        }
+        if (data.ai_text_model) {
+          setCfTextModel(data.ai_text_model);
         }
         if (data.ai_api_key_configured) {
           setAiKeyConfigured(true);
@@ -104,7 +108,8 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
       .filter(Boolean)
       .map((s) => Number(s));
 
-    const finalAiModel = aiTab === 'cf' ? (cfModel || CF_AI_VISION_MODELS[0].id) : (customModel.trim() || null);
+    const finalAiModel = aiTab === 'cf' ? (cfVisionModel || CF_AI_VISION_MODELS[0].id) : (customModel.trim() || null);
+    const finalAiTextModel = aiTab === 'cf' ? (cfTextModel || CF_AI_TEXT_MODELS[0].id) : null;
     const finalBaseUrl = aiTab === 'custom' ? (aiBaseUrlInput.trim() || null) : (aiBaseUrlInput.trim() || null);
 
     const candidateSettings: any = {
@@ -113,6 +118,7 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
       timezone: activeTimezone,
       ai_base_url: finalBaseUrl,
       ai_model: finalAiModel,
+      ai_text_model: finalAiTextModel,
     };
 
     if (aiTab === 'custom' && aiApiKeyInput.trim()) {
@@ -145,6 +151,8 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
           reminder_days: res.settings.reminder_days,
           send_hour: res.settings.send_hour,
           timezone: res.settings.timezone,
+          ai_model: res.settings.ai_model,
+          ai_text_model: res.settings.ai_text_model,
         });
       }
 
@@ -384,14 +392,19 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
 
             {/* Tab 1: Workers AI Settings */}
             {aiTab === 'cf' && (
-              <div className="space-y-2.5 max-w-lg">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    视觉模型
-                  </label>
+              <div className="space-y-4 max-w-lg">
+                {/* 1. 视觉模型 (图片/拍照识别) */}
+                <div className="p-3 bg-white rounded-xl border border-gray-200 shadow-2xs space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+                      <span>📸</span>
+                      <span>视觉模型</span>
+                      <span className="text-[11px] font-normal text-gray-500">(拍照 / 相册多图识别)</span>
+                    </label>
+                  </div>
                   <select
-                    value={cfModel}
-                    onChange={(e) => setCfModel(e.target.value)}
+                    value={cfVisionModel}
+                    onChange={(e) => setCfVisionModel(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs sm:text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                   >
                     {CF_AI_VISION_MODELS.map((m) => (
@@ -400,26 +413,67 @@ export const Settings: React.FC<SettingsProps> = ({ user, onUserUpdate }) => {
                       </option>
                     ))}
                   </select>
+
+                  {/* Active Vision Model Features Detail */}
+                  {(() => {
+                    const matched = CF_AI_VISION_MODELS.find((m) => m.id === cfVisionModel) || CF_AI_VISION_MODELS[0];
+                    return (
+                      <div className="p-2.5 bg-gray-50 rounded-lg border border-gray-100 text-xs space-y-1">
+                        <div className="flex flex-wrap items-center justify-between gap-1">
+                          <span className="font-semibold text-gray-900 flex items-center gap-1.5">
+                            <span className="text-[11px] text-gray-500">特性：</span>
+                            <span className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-[11px] font-medium border border-blue-100">
+                              {matched.badge}
+                            </span>
+                          </span>
+                          <span className="text-gray-500 font-mono text-[11px]">{matched.pricingDesc}</span>
+                        </div>
+                        <p className="text-gray-600 leading-relaxed text-[11px] pt-0.5">{matched.features}</p>
+                      </div>
+                    );
+                  })()}
                 </div>
 
-                {/* Active CF Model Features Detail */}
-                {(() => {
-                  const matched = CF_AI_VISION_MODELS.find((m) => m.id === cfModel) || CF_AI_VISION_MODELS[0];
-                  return (
-                    <div className="p-2.5 sm:p-3 bg-gray-50 rounded-lg border border-gray-200 text-xs space-y-1">
-                      <div className="flex flex-wrap items-center justify-between gap-1">
-                        <span className="font-semibold text-gray-900 flex items-center gap-1.5">
-                          <span>🏷️ 特性：</span>
-                          <span className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-[11px] font-medium border border-blue-100">
-                            {matched.badge}
+                {/* 2. 文本模型 (合同文本提取) */}
+                <div className="p-3 bg-white rounded-xl border border-gray-200 shadow-2xs space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+                      <span>📝</span>
+                      <span>文本模型</span>
+                      <span className="text-[11px] font-normal text-gray-500">(合同正文 / 文本粘贴识别)</span>
+                    </label>
+                  </div>
+                  <select
+                    value={cfTextModel}
+                    onChange={(e) => setCfTextModel(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs sm:text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    {CF_AI_TEXT_MODELS.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        #{m.costRank} {m.name} · {m.badge}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Active Text Model Features Detail */}
+                  {(() => {
+                    const matched = CF_AI_TEXT_MODELS.find((m) => m.id === cfTextModel) || CF_AI_TEXT_MODELS[0];
+                    return (
+                      <div className="p-2.5 bg-gray-50 rounded-lg border border-gray-100 text-xs space-y-1">
+                        <div className="flex flex-wrap items-center justify-between gap-1">
+                          <span className="font-semibold text-gray-900 flex items-center gap-1.5">
+                            <span className="text-[11px] text-gray-500">特性：</span>
+                            <span className="bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded text-[11px] font-medium border border-emerald-100">
+                              {matched.badge}
+                            </span>
                           </span>
-                        </span>
-                        <span className="text-gray-500 font-mono text-[11px]">{matched.pricingDesc}</span>
+                          <span className="text-gray-500 font-mono text-[11px]">{matched.pricingDesc}</span>
+                        </div>
+                        <p className="text-gray-600 leading-relaxed text-[11px] pt-0.5">{matched.features}</p>
                       </div>
-                      <p className="text-gray-600 leading-relaxed text-[11px] sm:text-xs pt-0.5">{matched.features}</p>
-                    </div>
-                  );
-                })()}
+                    );
+                  })()}
+                </div>
               </div>
             )}
 

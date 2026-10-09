@@ -167,6 +167,11 @@ export function validateSettings(input: unknown): {
     aiModel = typeof s.ai_model === 'string' ? s.ai_model.trim() || null : null;
   }
 
+  let aiTextModel: string | null | undefined = undefined;
+  if (s.ai_text_model !== undefined) {
+    aiTextModel = typeof s.ai_text_model === 'string' ? s.ai_text_model.trim() || null : null;
+  }
+
   return {
     valid: true,
     clean: {
@@ -176,6 +181,7 @@ export function validateSettings(input: unknown): {
       ...(aiApiKey !== undefined ? { ai_api_key: aiApiKey } : {}),
       ...(aiBaseUrl !== undefined ? { ai_base_url: aiBaseUrl } : {}),
       ...(aiModel !== undefined ? { ai_model: aiModel } : {}),
+      ...(aiTextModel !== undefined ? { ai_text_model: aiTextModel } : {}),
     },
   };
 }

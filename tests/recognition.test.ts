@@ -6,7 +6,7 @@ import {
   validateSettings,
 } from '../src/shared/logic';
 import { recognizeContract } from '../src/worker/recognition';
-import { User, CF_AI_VISION_MODELS } from '../src/shared/types';
+import { User, CF_AI_VISION_MODELS, CF_AI_TEXT_MODELS } from '../src/shared/types';
 
 describe('10. 合同 AI 识别逻辑与数据规范化', () => {
   it('正确解析标准的 JSON 识别输出', () => {
@@ -372,19 +372,140 @@ describe('10. 合同 AI 识别逻辑与数据规范化', () => {
     expect(capturedOptions.messages[1].content).toContain(rawContractText);
   });
 
-  it('设置校验支持保存自定义 AI 配置字段', () => {
+  it('设置校验支持保存自定义 AI 配置字段（包含独立视觉模型与纯文本模型）', () => {
     const valid = validateSettings({
       reminder_days: [30, 15, 7],
       send_hour: 9,
       timezone: 'Asia/Shanghai',
       ai_api_key: 'sk-my-custom-key',
       ai_base_url: 'https://api.openai.com/v1',
-      ai_model: 'gpt-4o',
+      ai_model: '@cf/meta/llama-3.2-11b-vision-instruct',
+      ai_text_model: '@cf/qwen/qwen2.5-coder-32b-instruct',
     });
 
     expect(valid.valid).toBe(true);
     expect(valid.clean?.ai_api_key).toBe('sk-my-custom-key');
     expect(valid.clean?.ai_base_url).toBe('https://api.openai.com/v1');
-    expect(valid.clean?.ai_model).toBe('gpt-4o');
+    expect(valid.clean?.ai_model).toBe('@cf/meta/llama-3.2-11b-vision-instruct');
+    expect(valid.clean?.ai_text_model).toBe('@cf/qwen/qwen2.5-coder-32b-instruct');
+  });
+
+  it('Cloudflare Workers AI 文本模型列表独立推荐中文提取与推理模型', () => {
+    expect(CF_AI_TEXT_MODELS.length).toBeGreaterThanOrEqual(4);
+    // 第一推荐必须是 Qwen 2.5 Coder 32B
+    expect(CF_AI_TEXT_MODELS[0].id).toBe('@cf/qwen/qwen2.5-coder-32b-instruct');
+    expect(CF_AI_TEXT_MODELS[0].isDefault).toBe(true);
+    // 视觉与文本推荐首选模型不同
+    expect(CF_AI_TEXT_MODELS[0].id).not.toBe(CF_AI_VISION_MODELS[0].id);
+  });
+
+  it('文本识别在未传 model 时自动选用纯文本首选模型，而非视觉大模型', async () => {
+    let invokedModel: string | null = null;
+    const mockEnv = {
+      AI: {
+        run: async (model: string) => {
+          invokedModel = model;
+          return {
+            response: JSON.stringify({
+              name: '文本模型专项测试合同',
+              client: '测试科技',
+              end_date: '2027-01-01',
+            }),
+          };
+        },
+      },
+    };
+
+    const fakeUser: User = {
+      id: 'u1',
+      email: 'test@example.com',
+      reminder_days: [30, 15, 7],
+      send_hour: 9,
+      timezone: 'Asia/Shanghai',
+      created_at: new Date().toISOString(),
+    };
+
+    const res = await recognizeContract({
+      env: mockEnv as any,
+      user: fakeUser,
+      text: '合同名称：文本模型专项测试合同\n甲方：测试科技\n期限至2027-01-01',
+    });
+
+    expect(invokedModel).toBe('@cf/qwen/qwen2.5-coder-32b-instruct');
+    expect(res.model_used).toBe('@cf/qwen/qwen2.5-coder-32b-instruct');
+  });
+
+  it('用户配置自定义 ai_text_model 时，文本识别优先遵循该配置', async () => {
+    let invokedModel: string | null = null;
+    const mockEnv = {
+      AI: {
+        run: async (model: string) => {
+          invokedModel = model;
+          return {
+            response: JSON.stringify({
+              name: '自定义文本模型合同',
+              client: '阿里达摩院',
+              end_date: '2028-05-01',
+            }),
+          };
+        },
+      },
+    };
+
+    const fakeUser: User = {
+      id: 'u1',
+      email: 'test@example.com',
+      reminder_days: [30, 15, 7],
+      send_hour: 9,
+      timezone: 'Asia/Shanghai',
+      created_at: new Date().toISOString(),
+      ai_model: '@cf/meta/llama-3.2-11b-vision-instruct',
+      ai_text_model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+    };
+
+    const res = await recognizeContract({
+      env: mockEnv as any,
+      user: fakeUser,
+      text: '合同名称：自定义文本模型合同\n甲方：阿里达摩院\n到期：2028-05-01',
+    });
+
+    expect(invokedModel).toBe('@cf/meta/llama-3.3-70b-instruct-fp8-fast');
+    expect(res.model_used).toBe('@cf/meta/llama-3.3-70b-instruct-fp8-fast');
+  });
+
+  it('图片识别在未传 model 时保持自动选用视觉首选模型', async () => {
+    let invokedModel: string | null = null;
+    const mockEnv = {
+      AI: {
+        run: async (model: string) => {
+          invokedModel = model;
+          return {
+            response: JSON.stringify({
+              name: '图片视觉合同',
+              client: '视觉科技',
+              end_date: '2026-12-31',
+            }),
+          };
+        },
+      },
+    };
+
+    const fakeUser: User = {
+      id: 'u1',
+      email: 'test@example.com',
+      reminder_days: [30, 15, 7],
+      send_hour: 9,
+      timezone: 'Asia/Shanghai',
+      created_at: new Date().toISOString(),
+    };
+
+    const res = await recognizeContract({
+      env: mockEnv as any,
+      user: fakeUser,
+      images: ['data:image/jpeg;base64,ZmFrZQ=='],
+    });
+
+    expect(invokedModel).toBe('@cf/meta/llama-3.2-11b-vision-instruct');
+    expect(res.model_used).toBe('@cf/meta/llama-3.2-11b-vision-instruct');
   });
 });

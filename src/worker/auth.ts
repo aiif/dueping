@@ -58,7 +58,7 @@ export const authMiddleware = async (c: Context<{ Bindings: Env; Variables: { us
   const now = new Date().toISOString();
 
   const row = await c.env.DB.prepare(`
-    SELECT u.id, u.email, u.reminder_days, u.send_hour, u.timezone, u.created_at, u.ai_api_key, u.ai_base_url, u.ai_model, s.expires_at
+    SELECT u.id, u.email, u.reminder_days, u.send_hour, u.timezone, u.created_at, u.ai_api_key, u.ai_base_url, u.ai_model, u.ai_text_model, s.expires_at
     FROM sessions s
     JOIN users u ON s.user_id = u.id
     WHERE s.token_hash = ? AND s.expires_at > ?
@@ -72,6 +72,7 @@ export const authMiddleware = async (c: Context<{ Bindings: Env; Variables: { us
     ai_api_key?: string | null;
     ai_base_url?: string | null;
     ai_model?: string | null;
+    ai_text_model?: string | null;
     expires_at: string;
   }>();
 
@@ -95,6 +96,7 @@ export const authMiddleware = async (c: Context<{ Bindings: Env; Variables: { us
     ai_api_key: row.ai_api_key || null,
     ai_base_url: row.ai_base_url || null,
     ai_model: row.ai_model || null,
+    ai_text_model: row.ai_text_model || null,
   };
 
   c.set('user', user);

@@ -102,9 +102,10 @@ npm run deploy
    - `timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai'`
    - `ai_api_key TEXT DEFAULT NULL`（迁移 0002：可选自定义大模型密钥）
    - `ai_base_url TEXT DEFAULT NULL`（迁移 0002：可选自定义大模型 Base URL）
-   - `ai_model TEXT DEFAULT NULL`（迁移 0002：可选自定义视觉模型名称）
+   - `ai_model TEXT DEFAULT NULL`（迁移 0002：可选独立视觉模型名称，用于拍照/相册识别）
+   - `ai_text_model TEXT DEFAULT NULL`（迁移 0003：可选独立纯文本模型名称，用于文本正文提取）
    - `created_at TEXT NOT NULL`
-   - *设计理由*：`reminder_days` 存为标准 JSON 整数数组；时区存为 IANA 时区标识符（如 `Asia/Shanghai`）；AI 配置支持用户私有模型扩展，未配置时自动回退系统默认/演示模式。
+   - *设计理由*：`reminder_days` 存为标准 JSON 整数数组；时区存为 IANA 时区标识符（如 `Asia/Shanghai`）；AI 配置区分拍照视觉模型（首选 Llama 3.2 11B Vision）与文本提取模型（首选 Qwen 2.5 Coder 32B），支持用户独立配置。
 2. **`sessions`**：
    - `token_hash TEXT PRIMARY KEY`
    - `user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE`
